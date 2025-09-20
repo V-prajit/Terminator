@@ -109,6 +109,22 @@ function createLocalResponse(payload) {
   const predictedLane = predictNextLane(recent_lanes, payload.last_move);
   let targetLanes = [predictedLane];
 
+  // Generate LLM-style explanation based on prediction logic
+  let explain = '';
+  const current = recent_lanes?.[recent_lanes.length - 1] ?? player_lane;
+
+  if (predictedLane === current) {
+    if (recent_lanes && recent_lanes.length >= 3 && recent_lanes.slice(-3).every(l => l === current)) {
+      explain = `Detecting stationary pattern in lane ${current}`;
+    } else {
+      explain = `Targeting current position in lane ${predictedLane}`;
+    }
+  } else {
+    const movement = predictedLane - current;
+    const direction = movement > 0 ? 'rightward' : 'leftward';
+    explain = `Predicting ${direction} movement to lane ${predictedLane}`;
+  }
+
   // Add flanking shots for advanced phases
   if (maxBullets > 1 && overlord_mode === 'aggressive') {
     if (predictedLane > 0 && targetLanes.length < maxBullets) {
@@ -116,6 +132,10 @@ function createLocalResponse(payload) {
     }
     if (predictedLane < 4 && targetLanes.length < maxBullets) {
       targetLanes.push(predictedLane + 1);
+    }
+
+    if (targetLanes.length > 1) {
+      explain += ` with flanking shots`;
     }
   }
 
@@ -127,7 +147,7 @@ function createLocalResponse(payload) {
       dirs: targetLanes.map(() => 0),
       speed: overlord_mode === 'aggressive' ? 1.2 : 1.0
     },
-    explain: `Local prediction: targeting lane ${predictedLane}${targetLanes.length > 1 ? ' +flanking' : ''}`,
+    explain: explain,
     source: 'local-logic'
   };
 }
@@ -312,7 +332,7 @@ app.post("/decide", async (req, res) => {
         return res.status(200).json({
           decision: aiResponse.decision,
           params: aiResponse.params,
-          explain: aiResponse.explain + " (AI-enhanced)",
+          explain: aiResponse.explain,
           source: "cerebras-hybrid",
           latency_ms: Date.now() - t0,
           usage: upstream.usage,
@@ -326,7 +346,6 @@ app.post("/decide", async (req, res) => {
   }
 
   // Return immediate local response (AI failed or timed out)
-  localResponse.explain += " (AI-fallback)";
   return res.status(200).json(localResponse);
 });
 
