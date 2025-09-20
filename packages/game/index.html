@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Overlord AI - Can You Survive?</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      touch-action: none;
+    }
+    
+    #game-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    
+    #ui-top {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      border-bottom: 2px solid #ff0040;
+    }
+    
+    #survival-time {
+      font-size: 20px;
+      color: #00ff00;
+    }
+    
+    #cerebras-stats {
+      text-align: right;
+      font-size: 14px;
+      color: #00ffff;
+    }
+    
+    #game-canvas {
+      flex: 1;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    #overlord-taunt {
+      padding: 10px;
+      background: rgba(255, 0, 64, 0.1);
+      border-top: 2px solid #ff0040;
+      text-align: center;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-style: italic;
+      color: #ff0040;
+    }
+    
+    #death-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.95);
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    
+    #death-modal.show {
+      display: flex;
+    }
+    
+    .death-title {
+      font-size: 48px;
+      color: #ff0040;
+      margin-bottom: 20px;
+    }
+    
+    .death-stats {
+      font-size: 24px;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+    
+    .retry-button {
+      padding: 20px 40px;
+      font-size: 24px;
+      background: #ff0040;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      text-transform: uppercase;
+    }
+    
+    .retry-button:hover {
+      background: #ff0060;
+    }
+    
+    #mode-selector {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 100;
+    }
+    
+    .sparkline {
+      display: inline-block;
+      width: 60px;
+      height: 20px;
+      margin-left: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="ui-top">
+      <div id="survival-time">0.0s</div>
+      <div id="cerebras-stats">
+        <div>Cerebras: <span id="latency">---</span>ms</div>
+        <canvas id="sparkline" class="sparkline"></canvas>
+      </div>
+    </div>
+    
+    <div id="game-canvas"></div>
+    
+    <div id="overlord-taunt">Initializing Overlord AI...</div>
+    
+    <select id="mode-selector">
+      <option value="aggressive">Aggressive</option>
+      <option value="defensive">Defensive</option>
+      <option value="trickster">Trickster</option>
+    </select>
+  </div>
+  
+  <div id="death-modal">
+    <div class="death-title">YOU DIED</div>
+    <div class="death-stats">
+      <div>Survived: <span id="final-time">0.0</span> seconds</div>
+      <div>Best: <span id="best-time">0.0</span> seconds</div>
+    </div>
+    <button class="retry-button" onclick="window.restartGame()">TRY AGAIN</button>
+  </div>
+  
+  <script type="module" src="/src/game.js"></script>
+</body>
+</html>

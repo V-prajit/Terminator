@@ -1,0 +1,18 @@
+{
+  "name": "ai-overlord-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:ai\" \"npm run dev:game\"",
+    "dev:ai": "npm run dev --workspace=@ai-overlord/ai-server",
+    "dev:game": "npm run dev --workspace=@ai-overlord/game",
+    "test": "npm run test --workspaces",
+    "build": "npm run build --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

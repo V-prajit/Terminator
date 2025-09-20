@@ -1,0 +1,20 @@
+{
+  "name": "@ai-overlord/ai-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "@cerebras/cerebras-cloud-sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}
