@@ -4,7 +4,7 @@
 const SYNC_ENABLED = false;
 
 class SyncClient {
-  constructor(url = 'ws://localhost:8787/ws') {
+  constructor(url = ((location?.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws')) {
     this.url = url;
     this.ws = null;
     this.connected = false;

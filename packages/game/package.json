@@ -9,7 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "phaser": "^3.70.0"
+    "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5",
+    "phaser": "^3.70.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "vite": "^5.0.0"

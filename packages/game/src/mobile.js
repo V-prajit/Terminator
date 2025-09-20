@@ -1,177 +1,278 @@
-// mobile.js
-import { OverlordGame } from './game.js';
+// ======================= src/mobile.js =======================
+// Backend base (Tailscale IP). You can override with ?ai=<base> in the URL.
+// ===== Single-origin fetch rewriter (default) =====
+(function resolveAIBase(){
+  const p = new URLSearchParams(location.search);
+  // Default to SAME ORIGIN (empty base). If ?ai=<url> is provided (e.g. tunnel), use it.
+  const param = p.get('ai');
+  const AI_BASE = param || '';
+  window.__AI_BASE__ = AI_BASE;
 
-const canvas = document.getElementById('game-canvas');
+  // Rewrite any hardcoded localhost:8787 → AI_BASE, and prefix relative paths with AI_BASE.
+  const reLocal = /^http:\/\/(localhost|127\.0\.0\.1):8787\b/;
+  const origFetch = window.fetch.bind(window);
 
-// Debug function to check canvas state
-function debugCanvas() {
-  console.log('Canvas element:', canvas);
-  console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
-  console.log('Canvas style:', canvas.style.width, 'x', canvas.style.height);
-  console.log('Canvas parent:', canvas.parentElement);
-  console.log('Parent dimensions:', canvas.parentElement.getBoundingClientRect());
+  window.fetch = (input, init) => {
+    if (typeof input === 'string') {
+      if (input.startsWith('/')) input = AI_BASE + input;
+      else if (reLocal.test(input)) input = input.replace(reLocal, AI_BASE);
+    } else if (input && input.url) {
+      const u = input.url.startsWith('/') ? (AI_BASE + input.url)
+              : reLocal.test(input.url)    ? input.url.replace(reLocal, AI_BASE)
+              : input.url;
+      input = new Request(u, input);
+    }
+    return origFetch(input, init);
+  };
 
-  const ctx = canvas.getContext('2d');
-  console.log('Canvas context:', ctx);
+  // Optional quick ping for debugging
+  origFetch((AI_BASE || '') + '/health')
+    .then(r => r.text()).then(t => console.log('[mobile] /health:', t.slice(0,120)+'...'))
+    .catch(e => console.warn('[mobile] backend unreachable:', e));
+})();
 
-  // Test basic rendering
-  ctx.fillStyle = '#ff0000';
-  ctx.fillRect(10, 10, 50, 50);
-  console.log('Test rectangle drawn');
-}
+// ===== UUID polyfill (safe; doesn't reassign window.crypto) =====
+(function installUUIDPolyfill(){
+  const g = typeof globalThis !== 'undefined' ? globalThis : window;
+  if (g.crypto && typeof g.crypto.randomUUID === 'function') return;
 
-// Fix mobile canvas sizing for Safari compatibility
-function resizeCanvas() {
-  const container = canvas.parentElement;
-  const containerRect = container.getBoundingClientRect();
+  const getRandomValues = (g.crypto && g.crypto.getRandomValues)
+    ? g.crypto.getRandomValues.bind(g.crypto)
+    : (buf) => { for (let i = 0; i < buf.length; i++) buf[i] = (Math.random() * 256) | 0; return buf; };
 
-  // Force explicit dimensions for Safari
-  const width = Math.floor(containerRect.width);
-  const height = Math.floor(containerRect.height);
+  const randomUUID = () => {
+    const b = new Uint8Array(16);
+    getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40; // v4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant
+    const h = (n)=>n.toString(16).padStart(2,'0');
+    const s=[...b].map(h).join('');
+    return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`;
+  };
 
-  // Set canvas display size
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
-
-  // Set canvas actual size (Safari prefers integer values)
-  canvas.width = width;
-  canvas.height = height;
-
-  // Update game dimensions if game exists
-  if (window.game) {
-    window.game.width = width;
-    window.game.height = height;
-    window.game.canvas.width = width;
-    window.game.canvas.height = height;
+  if (g.crypto && !g.crypto.randomUUID) {
+    try { Object.defineProperty(g.crypto, 'randomUUID', { value: randomUUID, configurable: true }); } catch {}
   }
+  if (!g.randomUUID) g.randomUUID = randomUUID;
+})();
 
-  console.log('Canvas resized:', width, 'x', height);
-}
+// ===== Lazy-load the game AFTER polyfills are in place =====
+let OverlordGameCtor; // filled by dynamic import
 
-// Initial resize
-resizeCanvas();
+// ===== Mobile constants =====
+const DPR = Math.min(window.devicePixelRatio || 1, 2); // cap for perf
+const SWIPE_MIN_PX = 40;
+const TAP_MAX_PX   = 28;
+const TAP_MAX_MS   = 300;
 
-// Resize on orientation change
-window.addEventListener('resize', resizeCanvas);
-window.addEventListener('orientationchange', () => {
-  setTimeout(resizeCanvas, 100); // Delay to ensure orientation change is complete
-});
-
-// Wait for DOM to be ready and create game
-function initGame() {
-  const container = canvas.parentElement;
-  const rect = container.getBoundingClientRect();
-
-  // Ensure canvas has proper dimensions before creating game
-  canvas.width = Math.floor(rect.width) || 320;
-  canvas.height = Math.floor(rect.height) || 480;
-
-  console.log('Initializing game with canvas:', canvas.width, 'x', canvas.height);
-
-  const game = new OverlordGame(canvas, {
-  onDeath: (data) => {
-    document.getElementById('final-time').textContent = data.time.toFixed(1);
-    document.getElementById('final-best').textContent = data.best.toFixed(1);
-    document.getElementById('death-modal').classList.add('show');
-  },
-  onTaunt: (message) => {
-    document.getElementById('taunt-overlay').textContent = message;
-  },
-  onUpdate: (data) => {
-    document.getElementById('survival-time').textContent = data.time.toFixed(1) + 's';
-    document.getElementById('best-time').textContent = data.best.toFixed(1) + 's';
-  }
-  });
-
-  // Store game globally for resize function
-  window.game = game;
-
-  // Start the game
-  game.start();
-
-  return game;
-}
-
-// Initialize game after a short delay to ensure DOM is ready
+let canvas;
 let game;
-
-// Run debug first
-setTimeout(() => {
-  debugCanvas();
-}, 50);
-
-setTimeout(() => {
-  game = initGame();
-}, 100);
-
-// Enhanced touch controls with tap to shoot
 let touchStart = null;
 
-function setupTouchControls() {
-  if (!canvas || !window.game) {
-    setTimeout(setupTouchControls, 100);
-    return;
+// ---- Canvas sizing (CSS vs backing store with DPR) ----
+function sizeCanvasToContainer() {
+  const container = canvas.parentElement || document.body;
+  const rect = container.getBoundingClientRect();
+  const cssW = Math.max(1, Math.floor(rect.width));
+  const cssH = Math.max(1, Math.floor(rect.height));
+
+  // CSS size (logical points)
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+
+  // Backing store size (physical pixels)
+  canvas.width  = Math.floor(cssW * DPR);
+  canvas.height = Math.floor(cssH * DPR);
+
+  if (game) {
+    game.width = cssW;
+    game.height = cssH;
+    if (game.canvas) {
+      game.canvas.width  = canvas.width;
+      game.canvas.height = canvas.height;
+    }
+    if (game.ctx && game.ctx.setTransform) {
+      game.ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    }
+    game.onResize?.(cssW, cssH, DPR);
   }
+  console.log('[mobile] canvas sized:', cssW, 'x', cssH, '(css)  DPR=', DPR);
+}
+
+// ---- Debug helper (draws a small red square) ----
+function debugCanvas() {
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ff0000';
+  ctx.fillRect(10 * DPR, 10 * DPR, 50 * DPR, 50 * DPR);
+  console.log('[mobile] drew debug rect @ DPR=', DPR);
+}
+
+// ---- Touch controls (non-passive so preventDefault works on iOS) ----
+function setupTouchControls() {
+  ['touchstart','touchmove','touchend','touchcancel','pointerdown','pointermove','pointerup']
+    .forEach(evt => window.addEventListener(evt, () => {}, { passive: false }));
 
   canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    touchStart = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
-      time: Date.now()
-    };
+    const t = e.touches[0];
+    touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
   }, { passive: false });
 
   canvas.addEventListener('touchend', (e) => {
     e.preventDefault();
-    if (!touchStart || !window.game) return;
+    if (!touchStart || !game) return;
+    const t   = e.changedTouches[0];
+    const dx  = t.clientX - touchStart.x;
+    const dy  = t.clientY - touchStart.y;
+    const dt  = performance.now() - touchStart.t;
+    const ax  = Math.abs(dx), ay = Math.abs(dy);
 
-    const dx = e.changedTouches[0].clientX - touchStart.x;
-    const dy = e.changedTouches[0].clientY - touchStart.y;
-    const dt = Date.now() - touchStart.time;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    // Tap to shoot (short touch with minimal movement)
-    if (distance < 30 && dt < 300) {
-      window.game.shoot();
+    if (ax < TAP_MAX_PX && ay < TAP_MAX_PX && dt < TAP_MAX_MS) {
+      game.shoot?.();
+    } else if (ax > SWIPE_MIN_PX && ax > ay && dt < 500) {
+      dx < 0 ? game.moveLeft?.() : game.moveRight?.();
     }
-    // Horizontal swipe to move
-    else if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) && dt < 500) {
-      if (dx < 0) window.game.moveLeft();
-      else window.game.moveRight();
-    }
-
     touchStart = null;
   }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+  canvas.addEventListener('touchstart', () => { canvas.style.filter = 'brightness(1.06)'; }, { passive: true });
+  canvas.addEventListener('touchend',   () => { canvas.style.filter = 'brightness(1)';    }, { passive: true });
 }
 
-// Setup touch controls after game is ready
-setupTouchControls();
-
-// Prevent scrolling on canvas
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-}, { passive: false });
-
-// Add visual feedback for touches
-function addTouchFeedback() {
-  canvas.addEventListener('touchstart', (e) => {
-    canvas.style.filter = 'brightness(1.1)';
-  }, { passive: true });
-
-  canvas.addEventListener('touchend', () => {
-    canvas.style.filter = 'brightness(1)';
-  }, { passive: true });
+// ---- iOS audio unlock ----
+function unlockAudioOnce() {
+  const tryResume = () => {
+    const ctx = window.__audioCtx || (game && game.audioCtx);
+    if (ctx && ctx.state !== 'running') ctx.resume?.().catch(()=>{});
+    ['touchstart','pointerdown','mousedown','keydown'].forEach(evt =>
+      window.removeEventListener(evt, tryResume, true)
+    );
+  };
+  ['touchstart','pointerdown','mousedown','keydown'].forEach(evt =>
+    window.addEventListener(evt, tryResume, true)
+  );
 }
 
-addTouchFeedback();
-
-// Retry button
-document.getElementById('retry-button').addEventListener('click', () => {
-  document.getElementById('death-modal').classList.remove('show');
-  if (window.game) {
-    window.game.restart();
+// ---- Robust start hooks ----
+function startGameIfNeeded() {
+  if (!game) return;
+  if (!game.__started) {
+    game.__started = true;
+    console.log('[mobile] starting game due to user gesture');
+    game.start?.();
   }
-});
+}
 
-// Game is started in initGame function
+function hookReadyBar() {
+  const candidates = Array.from(document.querySelectorAll('button, .btn, [role="button"], .bar, .banner, .status, .cta, div, span'));
+  const readyEl = candidates.find(el => (el.textContent || '').trim().toLowerCase().includes('ready to play'));
+  if (!readyEl) return;
+  ['touchend','click'].forEach(evt => {
+    readyEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startGameIfNeeded();
+    }, { passive: false });
+  });
+}
+
+// ---- On-screen error overlay ----
+function installErrorOverlay() {
+  const box = document.createElement('div');
+  Object.assign(box.style, {
+    position: 'fixed', left: '8px', bottom: '8px',
+    maxWidth: '90vw', padding: '8px 10px', fontFamily: 'monospace',
+    fontSize: '12px', color: '#ffb3b3', background: 'rgba(60,0,0,0.7)',
+    border: '1px solid #ff5a5a', borderRadius: '6px', zIndex: 99999,
+    display: 'none', whiteSpace: 'pre-wrap', pointerEvents: 'none'
+  });
+  box.id = 'error-overlay';
+  document.body.appendChild(box);
+  const show = (msg) => { box.textContent = msg; box.style.display = 'block'; };
+  window.addEventListener('error', (e) => show('[error] ' + (e.message || e.error)));
+  window.addEventListener('unhandledrejection', (e) =>
+    show('[promise] ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)))
+  );
+}
+
+// ---- Game init ----
+async function initGame() {
+  if (!OverlordGameCtor) {
+    const mod = await import('./game.js'); // your class exports OverlordGame
+    OverlordGameCtor = mod.OverlordGame;
+  }
+
+  sizeCanvasToContainer();
+  console.log('[mobile] init OverlordGame', { backing: [canvas.width, canvas.height], DPR });
+
+  game = new OverlordGameCtor(canvas, {
+    onDeath: (data) => {
+      document.getElementById('final-time').textContent = data.time.toFixed(1);
+      document.getElementById('final-best').textContent = data.best.toFixed(1);
+      document.getElementById('death-modal').classList.add('show');
+    },
+    onTaunt: (message) => {
+      document.getElementById('taunt-overlay').textContent = message;
+    },
+    onUpdate: (data) => {
+      document.getElementById('survival-time').textContent = data.time.toFixed(1) + 's';
+      document.getElementById('best-time').textContent     = data.best.toFixed(1) + 's';
+    }
+  });
+
+  if (game.ctx && game.ctx.setTransform) {
+    game.ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  window.game = game;
+
+  setupTouchControls();
+  unlockAudioOnce();
+
+  game.start?.();
+  game.__started = true;
+}
+
+// ---- Boot ----
+function boot() {
+  canvas = document.getElementById('game-canvas');
+  if (!canvas) {
+    console.warn('[mobile] #game-canvas not found; retrying...');
+    setTimeout(boot, 30);
+    return;
+  }
+
+  sizeCanvasToContainer();
+  setTimeout(debugCanvas, 50);
+
+  window.addEventListener('resize',           () => setTimeout(sizeCanvasToContainer, 50),  { passive: true });
+  window.addEventListener('orientationchange',() => setTimeout(sizeCanvasToContainer, 100), { passive: true });
+
+  installErrorOverlay();
+  hookReadyBar();
+
+  ['touchend','pointerup','mousedown','keydown'].forEach(evt => {
+    window.addEventListener(evt, startGameIfNeeded, { once: true, passive: false, capture: true });
+  });
+  ['touchend','pointerup','mousedown'].forEach(evt => {
+    canvas.addEventListener(evt, startGameIfNeeded, { passive: false });
+  });
+
+  const retryBtn = document.getElementById('retry-button');
+  retryBtn?.addEventListener('click', () => {
+    document.getElementById('death-modal')?.classList.remove('show');
+    game?.restart?.();
+    game.__started = true;
+  });
+
+  setTimeout(() => { initGame().catch(console.error); }, 80);
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', boot, { once: true });
+} else {
+  boot();
+}
+// ===================== end src/mobile.js =====================

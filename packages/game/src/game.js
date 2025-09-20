@@ -1,7 +1,7 @@
 // game.js - Fixed version
 // Core game engine with proper bullet targeting and telegraph timing
 
-const API_URL = 'http://localhost:8787';
+const API_URL = new URLSearchParams(location.search).get('ai') || '';
 const TICK_MS = 700;
 const GRACE_MS = 1200;
 const INVULN_MS = 500;

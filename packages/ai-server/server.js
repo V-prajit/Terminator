@@ -349,8 +349,19 @@ app.post("/decide", async (req, res) => {
   return res.status(200).json(localResponse);
 });
 
+// add near other routes
+app.post('/taunt', (req, res) => {
+  const lines = [
+    "You move like dial-up.",
+    "I've seen faster lanes on a Monday.",
+    "Predictable. Again.",
+    "Left? Right? Wrong."
+  ];
+  res.json({ message: lines[Math.floor(Math.random()*lines.length)] });
+});
+
 // ─────────── Boot ───────────
-http.createServer(app).listen(PORT, () => {
+http.createServer(app).listen(PORT, '0.0.0.0', () => {
   log("🤖 AI Overlord Server");
   log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   log("Mode:", "LIVE");
