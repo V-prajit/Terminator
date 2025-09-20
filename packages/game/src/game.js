@@ -206,6 +206,125 @@ class EffectsManager {
   }
 }
 
+// Boss class
+class Boss {
+  constructor(game) {
+    this.game = game;
+    this.maxHealth = 100;
+    this.health = this.maxHealth;
+    this.position = 1; // Starting position (0 = lanes 0-2, 1 = lanes 1-3, 2 = lanes 2-4)
+    this.width = 3; // Spans 3 lanes
+    this.active = true;
+    this.lastMoveTime = 0;
+    this.damageFlash = 0;
+    this.shootCooldown = 0;
+  }
+
+  takeDamage(amount = 20) {
+    if (!this.active) return false;
+
+    this.health = Math.max(0, this.health - amount);
+    this.damageFlash = 300; // Flash duration in ms
+
+    if (this.health <= 0) {
+      this.active = false;
+      return true; // Boss defeated
+    }
+    return false;
+  }
+
+  update(dt) {
+    if (!this.active) return;
+
+    // Reduce damage flash
+    this.damageFlash = Math.max(0, this.damageFlash - dt * 1000);
+
+    // Reduce shoot cooldown
+    this.shootCooldown = Math.max(0, this.shootCooldown - dt * 1000);
+
+    // Boss movement (change position occasionally)
+    const now = Date.now();
+    if (now - this.lastMoveTime > 3000 && Math.random() < 0.3) {
+      this.position = Math.floor(Math.random() * 3); // 0, 1, or 2
+      this.lastMoveTime = now;
+    }
+  }
+
+  getLanes() {
+    return [this.position, this.position + 1, this.position + 2];
+  }
+
+  getX() {
+    return this.game.getLaneX(this.position + 1); // Center of the 3 lanes
+  }
+
+  getY() {
+    return 120; // Fixed Y position
+  }
+
+  getWidth() {
+    return this.game.width / 5 * 3; // 3 lane widths
+  }
+
+  getHeight() {
+    return 60;
+  }
+
+  canShoot() {
+    return this.active && this.shootCooldown <= 0;
+  }
+
+  shoot() {
+    if (!this.canShoot()) return;
+
+    this.shootCooldown = 1500; // 1.5 second cooldown
+
+    // Boss shoots from multiple lanes more aggressively
+    const targetLanes = this.getLanes();
+    const playerLane = this.game.state.playerLane;
+
+    // Prioritize shooting at player's lane if it's within boss coverage
+    let shootLanes = [];
+    if (targetLanes.includes(playerLane)) {
+      shootLanes.push(playerLane);
+      // Add flanking shots
+      if (shootLanes.length < 2 && playerLane > 0 && targetLanes.includes(playerLane - 1)) {
+        shootLanes.push(playerLane - 1);
+      }
+      if (shootLanes.length < 2 && playerLane < 4 && targetLanes.includes(playerLane + 1)) {
+        shootLanes.push(playerLane + 1);
+      }
+    } else {
+      // Shoot from center of boss if player is outside range
+      shootLanes.push(this.position + 1);
+    }
+
+    // Spawn enemy bullets
+    shootLanes.forEach(lane => {
+      this.game.spawnBullet({
+        lane: lane,
+        dir: 0,
+        speed: 1.0,
+        type: 'enemy'
+      });
+    });
+  }
+
+  checkCollision(x, y, radius = 10) {
+    if (!this.active) return false;
+
+    const bossLeft = this.getX() - this.getWidth() / 2;
+    const bossRight = this.getX() + this.getWidth() / 2;
+    const bossTop = this.getY() - this.getHeight() / 2;
+    const bossBottom = this.getY() + this.getHeight() / 2;
+
+    return (x + radius > bossLeft &&
+            x - radius < bossRight &&
+            y + radius > bossTop &&
+            y - radius < bossBottom);
+  }
+}
+
 // Game state management
 class GameState {
   constructor() {
@@ -213,20 +332,24 @@ class GameState {
     this.bestTime = this.loadBest();
     this.playerId = this.getPlayerId();
   }
-  
+
   reset() {
     this.runId = crypto.randomUUID();
     this.tick = 0;
     this.startTime = Date.now();
     this.survivalTime = 0;
     this.dead = false;
+    this.won = false;
     this.playerLane = 2;
     this.recentMoves = [];
     this.recentLanes = [2]; // Start with center lane
     this.mode = 'aggressive';
     this.bullets = [];
+    this.playerBullets = [];
     this.challenges = 0;
     this.predictions = 0;
+    this.lastPlayerShot = 0;
+    this.ammo = 10; // Limited ammo for increased difficulty
   }
   
   getPlayerId() {
@@ -288,28 +411,30 @@ export class OverlordGame {
     this.ctx = canvas.getContext('2d');
     this.width = canvas.width;
     this.height = canvas.height;
-    
+
     this.state = new GameState();
     this.renderer = new RenderLayer(this.ctx);
     this.animator = new Animator();
     this.sfx = new Sfx();
     this.entities = new EntityRegistry();
     this.effects = new EffectsManager();
-    
+    this.boss = new Boss(this);
+
     this.graceEndTime = 0;
     this.invulnEndTime = 0;
     this.lastTickTime = 0;
     this.lastTauntTime = 0;
     this.lastDecision = null;
     this.playerAnimOffset = 0;
-    
+
     this.callbacks = {
       onDeath: options.onDeath || (() => {}),
+      onWin: options.onWin || (() => {}),
       onTaunt: options.onTaunt || (() => {}),
       onDebug: options.onDebug || (() => {}),
       onUpdate: options.onUpdate || (() => {})
     };
-    
+
     this.init();
   }
   
@@ -340,20 +465,53 @@ export class OverlordGame {
   
   start() {
     this.state.reset();
+    this.boss = new Boss(this); // Reset boss
     this.graceEndTime = Date.now() + GRACE_MS;
     this.invulnEndTime = Date.now() + INVULN_MS;
     this.lastTickTime = Date.now();
-    
+
     this.gameLoop();
     this.tickInterval = setInterval(() => this.tick(), TICK_MS);
   }
-  
+
   stop() {
     this.state.dead = true;
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+  }
+
+  shoot() {
+    if (this.state.dead || this.state.won) return;
+
+    // Check if player has ammo
+    if (this.state.ammo <= 0) return;
+
+    const now = Date.now();
+    const SHOOT_COOLDOWN = 500; // Increased from 250ms to 500ms for more difficulty
+
+    if (now - this.state.lastPlayerShot < SHOOT_COOLDOWN) return;
+
+    this.state.lastPlayerShot = now;
+
+    // Consume ammo
+    this.state.ammo--;
+
+    // Create player bullet
+    const playerBullet = {
+      x: this.getLaneX(this.state.playerLane),
+      y: this.getLaneY() - 20,
+      vx: 0,
+      vy: -400, // Negative velocity = upward movement
+      lane: this.state.playerLane,
+      active: true,
+      type: 'player',
+      rotation: 0
+    };
+
+    this.state.playerBullets.push(playerBullet);
+    this.sfx.playTone(600, 0.1, 'square'); // Different sound for player shooting
   }
   
   moveLeft() {
@@ -512,23 +670,22 @@ export class OverlordGame {
     if (this.state.bullets.length >= POOL_SIZE) {
       this.state.bullets.shift();
     }
-    
+
     const laneX = this.getLaneX(params.lane);
-    const overlordY = 50;
-    
-    // SIMPLIFIED: Just shoot straight down to the lane
-    // Diagonal movement was overcomplicating things
+    const overlordY = params.type === 'player' ? this.getLaneY() - 20 : 50;
+
     const bullet = {
       x: laneX,
       y: overlordY,
-      vx: 0, // No horizontal movement for now
-      vy: BASE_BULLET_VY * params.speed,
+      vx: 0,
+      vy: params.type === 'player' ? -400 : BASE_BULLET_VY * params.speed,
       lane: params.lane,
-      dir: params.dir,
-      speed: params.speed,
+      dir: params.dir || 0,
+      speed: params.speed || 1.0,
+      type: params.type || 'enemy',
       active: true,
       rotation: 0
-    }
+    };
 
     this.state.bullets.push(bullet);
     return bullet;
@@ -555,34 +712,44 @@ export class OverlordGame {
   }
   
   update() {
+    if (this.state.dead || this.state.won) return;
+
     const now = Date.now();
     const dt = (now - this.lastTickTime) / 1000;
     this.lastTickTime = now;
-    
+
     this.state.survivalTime = (now - this.state.startTime) / 1000;
-    
+
     // Update animation
     this.animator.tick();
     this.playerAnimOffset *= 0.9; // Smooth return to center
-    
+
     // Update effects
     this.effects.update(dt);
-    
-    // Update bullets
+
+    // Update boss
+    this.boss.update(dt);
+
+    // Boss shooting
+    if (this.boss.canShoot() && Math.random() < 0.02) { // 2% chance per frame
+      this.boss.shoot();
+    }
+
+    // Update enemy bullets
     this.state.bullets = this.state.bullets.filter(bullet => {
       if (!bullet.active) return false;
-      
+
       // Update position
       bullet.x += bullet.vx * dt;
       bullet.y += bullet.vy * dt;
       bullet.rotation += dt * 2;
-      
-      // Check collision with player
-      if (now > this.invulnEndTime) {
+
+      // Check collision with player (only enemy bullets)
+      if (bullet.type === 'enemy' && now > this.invulnEndTime) {
         const playerX = this.getLaneX(this.state.playerLane);
         const playerY = this.getLaneY();
         const dist = Math.hypot(bullet.x - playerX, bullet.y - playerY);
-        
+
         if (dist < 25) {
           this.onHit();
           this.effects.add({
@@ -596,14 +763,54 @@ export class OverlordGame {
           return false;
         }
       }
-      
+
       // Remove off-screen bullets
-      return bullet.y < this.height + 50 && bullet.x > -50 && bullet.x < this.width + 50;
+      return bullet.y < this.height + 50 && bullet.y > -50 &&
+             bullet.x > -50 && bullet.x < this.width + 50;
     });
-    
+
+    // Update player bullets
+    this.state.playerBullets = this.state.playerBullets.filter(bullet => {
+      if (!bullet.active) return false;
+
+      // Update position
+      bullet.x += bullet.vx * dt;
+      bullet.y += bullet.vy * dt;
+      bullet.rotation += dt * 2;
+
+      // Check collision with boss
+      if (this.boss.checkCollision(bullet.x, bullet.y, 8)) {
+        const defeated = this.boss.takeDamage(20);
+
+        // Add hit effect
+        this.effects.add({
+          type: 'explosion',
+          x: bullet.x,
+          y: bullet.y,
+          size: 20,
+          time: 0,
+          duration: 0.3
+        });
+
+        this.sfx.hit();
+
+        if (defeated) {
+          this.onWin();
+        }
+
+        return false; // Remove bullet
+      }
+
+      // Remove off-screen bullets
+      return bullet.y > -50;
+    });
+
     this.callbacks.onUpdate({
       time: this.state.survivalTime,
-      best: this.state.bestTime
+      best: this.state.bestTime,
+      bossHealth: this.boss.health,
+      bossMaxHealth: this.boss.maxHealth,
+      ammo: this.state.ammo
     });
   }
   
@@ -643,42 +850,112 @@ export class OverlordGame {
     
     // Draw effects (telegraphs, explosions)
     this.effects.render(this.renderer);
+
+    // Draw boss
+    if (this.boss.active) {
+      const flashAlpha = this.boss.damageFlash > 0 ? 0.8 : 1.0;
+      const bossColor = this.boss.damageFlash > 0 ? '#ffffff' : '#ff00ff';
+
+      // Boss body (large rectangle spanning 3 lanes)
+      this.ctx.save();
+      this.ctx.globalAlpha = flashAlpha;
+      this.ctx.fillStyle = bossColor;
+      this.ctx.strokeStyle = bossColor;
+      this.ctx.lineWidth = 3;
+
+      const bossX = this.boss.getX();
+      const bossY = this.boss.getY();
+      const bossWidth = this.boss.getWidth();
+      const bossHeight = this.boss.getHeight();
+
+      this.ctx.fillRect(bossX - bossWidth/2, bossY - bossHeight/2, bossWidth, bossHeight);
+      this.ctx.strokeRect(bossX - bossWidth/2, bossY - bossHeight/2, bossWidth, bossHeight);
+
+      // Boss eyes
+      this.ctx.fillStyle = '#ff0000';
+      this.ctx.fillRect(bossX - bossWidth/4, bossY - 10, 10, 10);
+      this.ctx.fillRect(bossX + bossWidth/4 - 10, bossY - 10, 10, 10);
+
+      // Boss health bar
+      const healthBarY = bossY - bossHeight/2 - 20;
+      const healthBarWidth = bossWidth;
+      const healthBarHeight = 8;
+      const healthPercent = this.boss.health / this.boss.maxHealth;
+
+      // Health bar background
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      this.ctx.fillRect(bossX - healthBarWidth/2, healthBarY, healthBarWidth, healthBarHeight);
+
+      // Health bar fill
+      this.ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
+      this.ctx.fillRect(bossX - healthBarWidth/2, healthBarY, healthBarWidth * healthPercent, healthBarHeight);
+
+      // Health bar border
+      this.ctx.strokeStyle = '#ffffff';
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeRect(bossX - healthBarWidth/2, healthBarY, healthBarWidth, healthBarHeight);
+
+      this.ctx.restore();
+    } else {
+      // Draw small overlord (original design) when no boss
+      const overlordX = this.width / 2;
+      const overlordY = 50;
+      this.renderer.drawShape(overlordX, overlordY, 'triangle', '#ff00ff', 25, {
+        stroke: true,
+        strokeColor: '#ff00ff',
+        glow: true,
+        glowColor: '#ff00ff',
+        glowSize: 15
+      });
+
+      // Draw overlord eyes
+      this.renderer.drawShape(overlordX - 8, overlordY - 5, 'circle', '#ff0000', 3);
+      this.renderer.drawShape(overlordX + 8, overlordY - 5, 'circle', '#ff0000', 3);
+    }
     
-    // Draw overlord (top center)
-    const overlordX = this.width / 2;
-    const overlordY = 50;
-    this.renderer.drawShape(overlordX, overlordY, 'triangle', '#ff00ff', 25, {
-      stroke: true,
-      strokeColor: '#ff00ff',
-      glow: true,
-      glowColor: '#ff00ff',
-      glowSize: 15
-    });
-    
-    // Draw overlord eyes
-    this.renderer.drawShape(overlordX - 8, overlordY - 5, 'circle', '#ff0000', 3);
-    this.renderer.drawShape(overlordX + 8, overlordY - 5, 'circle', '#ff0000', 3);
-    
-    // Draw bullets
+    // Draw enemy bullets
     this.state.bullets.forEach(bullet => {
       this.ctx.save();
       this.ctx.translate(bullet.x, bullet.y);
       this.ctx.rotate(bullet.rotation);
-      
+
       // Bullet trail
       const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 15);
       gradient.addColorStop(0, 'rgba(255, 0, 64, 0.8)');
       gradient.addColorStop(1, 'rgba(255, 0, 64, 0)');
       this.ctx.fillStyle = gradient;
       this.ctx.fillRect(-15, -15, 30, 30);
-      
+
       // Bullet core
       this.renderer.drawShape(0, 0, 'diamond', '#ff0040', 8, {
         glow: true,
         glowColor: '#ff0040',
         glowSize: 10
       });
-      
+
+      this.ctx.restore();
+    });
+
+    // Draw player bullets
+    this.state.playerBullets.forEach(bullet => {
+      this.ctx.save();
+      this.ctx.translate(bullet.x, bullet.y);
+      this.ctx.rotate(bullet.rotation);
+
+      // Blue bullet trail
+      const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 12);
+      gradient.addColorStop(0, 'rgba(0, 100, 255, 0.8)');
+      gradient.addColorStop(1, 'rgba(0, 100, 255, 0)');
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(-12, -12, 24, 24);
+
+      // Blue bullet core
+      this.renderer.drawShape(0, 0, 'circle', '#0064ff', 6, {
+        glow: true,
+        glowColor: '#0064ff',
+        glowSize: 8
+      });
+
       this.ctx.restore();
     });
     
@@ -743,16 +1020,35 @@ export class OverlordGame {
   
   onDeath() {
     if (this.state.dead) return;
-    
+
     this.state.dead = true;
     this.stop();
-    
+
     this.state.saveBest(this.state.survivalTime);
-    
+
     this.sfx.death();
     this.animator.setState('death');
-    
+
     this.callbacks.onDeath({
+      time: this.state.survivalTime,
+      best: this.state.bestTime
+    });
+  }
+
+  onWin() {
+    if (this.state.won || this.state.dead) return;
+
+    this.state.won = true;
+    this.stop();
+
+    this.state.saveBest(this.state.survivalTime);
+
+    // Victory sound effect
+    this.sfx.playTone(800, 0.5, 'sine');
+    setTimeout(() => this.sfx.playTone(1000, 0.5, 'sine'), 150);
+    setTimeout(() => this.sfx.playTone(1200, 0.8, 'sine'), 300);
+
+    this.callbacks.onWin({
       time: this.state.survivalTime,
       best: this.state.bestTime
     });
