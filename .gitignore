@@ -2,3 +2,4 @@
 packages/.DS_Store
 .DS_Store
 /packages/game/node_modules
+/node_modules
