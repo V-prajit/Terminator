@@ -36,6 +36,7 @@ const ACTIONS = [
   'slow_time',
   'speed_up',
   'spawn_coin',
+  'shoot_lane',
 ];
 
 // -------- Light server stats --------
@@ -101,10 +102,11 @@ async function cerebrasDecisionSameSchema(payload) {
   const maxTokens = Number(process.env.CEREBRAS_MAX_TOKENS || 128);
 
   const system = [
-    'You control hazards in a 4-lane survival game.',
+    'You control hazards in a 5-lane survival game.',
     'Return ONLY compact JSON with fields: decision, params, explain.',
     `decision must be one of: ${ACTIONS.join(', ')}.`,
-    'params = {"duration_ms": int between 200..1500, "speed": float between 0.8..1.6}.',
+    // CORRECTED LINE: Replaced single quotes with backticks
+    `params = {"duration_ms": int, "speed": float, "lane_index": int between 0..4}. lane_index is only for shoot_lane.`,
     'Keep "explain" very short.',
   ].join(' ');
 

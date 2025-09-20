@@ -414,6 +414,12 @@ class MainScene extends Phaser.Scene {
     const L = 0, R = this.lanes.length - 1;
 
     switch (decision) {
+      case "shoot_lane": {
+        if (typeof params.lane_index === 'number'){
+          const lane = Phaser.Math.Clamp(params.lane_index, 0, R);
+          this.fireWithCooldown(() => this.fireShot(lane, speed));
+        }
+      }
       case "spawn_fast_left":   this.fireWithCooldown(() => this.fireShot(L,  speed)); break;
       case "spawn_fast_right":  this.fireWithCooldown(() => this.fireShot(R,  speed)); break;
       case "spawn_slow_left":   this.fireWithCooldown(() => this.fireShot(L,  speed)); break;
