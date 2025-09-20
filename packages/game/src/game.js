@@ -8,6 +8,7 @@ const TICK_INTERVAL_MS = 700;
 
 const GRACE_MS = 1200;   // no AI actions for first 1.2s
 const INVULN_MS = 500;   // ignore collisions right after start/restart
+const SHOT_COOLDOWN_MS = 2000;
 
 // ---------- Lightweight state shared with DOM ----------
 const $time = document.getElementById("survival-time");
@@ -18,7 +19,7 @@ const $death = document.getElementById("death-modal");
 const $final = document.getElementById("final-time");
 const $best = document.getElementById("best-time");
 const $mode = document.getElementById("mode-selector");
-const SHOT_COOLDOWN_MS = 2000;
+
 // Tiny latency sparkline buffer
 const latencyHistory = [];
 const drawSpark = () => {
@@ -108,13 +109,25 @@ class MainScene extends Phaser.Scene {
     g.clear(); g.fillStyle(0x00ff66, 1); g.fillCircle(14, 14, 14);
     g.generateTexture("overlordTex", 28, 28);
 
-    // telegraph (cyan, 80x18) — replace the glowing block
+    // telegraph (cyan, 80x18)
     g.clear(); g.fillStyle(0x00ffff, 0.9); g.fillRect(0, 0, 80, 18);
     g.generateTexture("telegraphTex", 80, 18);
 
     g.destroy();
   }
 
+  // set lane by index 0..4
+  setLane(laneIndex) {
+    const idx = Phaser.Math.Clamp(typeof laneIndex === "number" ? laneIndex : this.currentLane, 0, this.lanes.length - 1);
+    this.currentLane = idx;
+    this.lastMove = String(idx);
+    this.recentMoves.push(idx);
+    if (this.recentMoves.length > 8) this.recentMoves.shift();
+
+    const pos = this.lanes[idx];
+    const dot = this.add.circle(pos.x, pos.y, 5, 0x00ff00, 0.9);
+    this.tweens.add({ targets: dot, alpha: 0, duration: 120, onComplete: () => dot.destroy() });
+  }
 
   create() {
     const w = this.scale.gameSize.width;
@@ -123,20 +136,21 @@ class MainScene extends Phaser.Scene {
     // Physics group (bullets)
     this.bullets = this.physics.add.group();
 
-    // Lanes: two X positions; Y fixed near bottom for player
-    const leftX  = w * 0.35;
-    const rightX = w * 0.65;
+    // Arena edges FIRST
+    this.arenaLeft  = w * 0.26;
+    this.arenaRight = w * 0.74;
     const playerY = h * 0.78;
 
-    this.lanes = { left: new Phaser.Math.Vector2(leftX, playerY),
-                   right: new Phaser.Math.Vector2(rightX, playerY) };
-    this.currentLane = "left";
+    // Five lanes 0..4 within arena
+    const makeLaneX = (i) => Phaser.Math.Linear(this.arenaLeft, this.arenaRight, (i + 1) / 6);
+    this.lanes = Array.from({ length: 5 }, (_, i) => new Phaser.Math.Vector2(makeLaneX(i), playerY));
+    this.currentLane = 2; // center
 
     // Overlord (top center, green)
     this.overlord = this.add.image(w / 2, h * 0.12, "overlordTex");
 
     // Visual guides
-    this.drawGuides(w, h, leftX, rightX, playerY);
+    this.drawGuides(w, h, playerY);
 
     // Player (white)
     this.player = this.physics.add.image(this.lanes[this.currentLane].x, playerY, "playerTex");
@@ -150,15 +164,8 @@ class MainScene extends Phaser.Scene {
       this.onDeath();
     }, null, this);
 
-    // Input: ONLY left/right (arrows or A/D). Touch = left/right halves
+    // Keyboard: ONLY arrow keys
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.A = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    this.D = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-
-    this.input.on("pointerdown", (p) => {
-      const x = p.x;
-      this.setLane(x < w / 2 ? "left" : "right");
-    });
 
     // Focus keys
     this.input.keyboard.preventDefault = true;
@@ -185,35 +192,45 @@ class MainScene extends Phaser.Scene {
     // Handle resize: recompute lane anchors & positions
     this.scale.on("resize", (size) => {
       const W = size.width, H = size.height;
-      const LX = W * 0.35, RX = W * 0.65, PY = H * 0.78;
-      this.lanes.left.set(LX, PY);
-      this.lanes.right.set(RX, PY);
+      this.arenaLeft  = W * 0.26;
+      this.arenaRight = W * 0.74;
+      const PY = H * 0.78;
+      const makeLaneX = (i) => Phaser.Math.Linear(this.arenaLeft, this.arenaRight, (i + 1) / 6);
+      this.lanes.forEach((v, i) => v.set(makeLaneX(i), PY));
       this.overlord.setPosition(W / 2, H * 0.12);
     });
   }
 
-  drawGuides(w, h, leftX, rightX, playerY) {
+  drawGuides(w, h, playerY) {
     const g = this.add.graphics();
+
+    // Arena box
     g.lineStyle(1, 0x4aa3ff, 0.35);
-    g.strokeRect(w * 0.26, h * 0.12, w * 0.48, h * 0.70); // arena
+    g.strokeRect(this.arenaLeft, h * 0.12, this.arenaRight - this.arenaLeft, h * 0.70);
+
+    // Lane separators (5 lanes)
     g.lineStyle(1, 0xff0040, 0.25);
     g.beginPath();
-    g.moveTo(leftX, h * 0.12);  g.lineTo(leftX, h * 0.82);
-    g.moveTo(rightX, h * 0.12); g.lineTo(rightX, h * 0.82);
+    this.lanes.forEach(v => {
+      g.moveTo(v.x, h * 0.12);
+      g.lineTo(v.x, h * 0.82);
+    });
     g.closePath(); g.strokePath();
+
+    // Player row line
     g.lineStyle(1, 0x999999, 0.2);
-    g.beginPath(); g.moveTo(w * 0.26, playerY); g.lineTo(w * 0.74, playerY); g.strokePath();
+    g.beginPath(); g.moveTo(this.arenaLeft, playerY); g.lineTo(this.arenaRight, playerY); g.strokePath();
   }
 
   update() {
     if (this.dead) return;
 
-    // Keyboard: left/right only
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.left) || Phaser.Input.Keyboard.JustDown(this.A)) {
-      this.setLane("left");
+    // Arrow keys to move between lane indices
+    if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
+      this.setLane(this.currentLane - 1);
     }
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.right) || Phaser.Input.Keyboard.JustDown(this.D)) {
-      this.setLane("right");
+    if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
+      this.setLane(this.currentLane + 1);
     }
 
     // Smooth snap along X; Y fixed
@@ -229,19 +246,6 @@ class MainScene extends Phaser.Scene {
       if (b.getData("ttl") && this.time.now > b.getData("ttl")) b.destroy();
       if (b.y > this.scale.gameSize.height + 40) b.destroy();
     });
-  }
-
-  setLane(lane) {
-    if (!this.lanes[lane]) return;
-    this.currentLane = lane;
-    this.lastMove = lane;
-    this.recentMoves.push(lane);
-    if (this.recentMoves.length > 8) this.recentMoves.shift();
-
-    // tiny flash on lane to confirm input
-    const pos = this.lanes[lane];
-    const dot = this.add.circle(pos.x, pos.y, 5, 0x00ff00, 0.9);
-    this.tweens.add({ targets: dot, alpha: 0, duration: 120, onComplete: () => dot.destroy() });
   }
 
   fireWithCooldown(fireFn) {
@@ -337,7 +341,6 @@ class MainScene extends Phaser.Scene {
       case "block_left":
       case "block_right":
       default:
-        // medium speed default
         params.speed = 1.0; break;
     }
     return {
@@ -351,22 +354,22 @@ class MainScene extends Phaser.Scene {
   // ---------- Apply actions (bullets only) ----------
   applyDecision({ decision, params = {} }) {
     const speed = params.speed ?? 1.0;
+    const L = 0, R = this.lanes.length - 1;
 
     switch (decision) {
-      case "spawn_fast_left":   this.fireWithCooldown(() => this.fireShot("left",  speed)); break;
-      case "spawn_fast_right":  this.fireWithCooldown(() => this.fireShot("right", speed)); break;
-      case "spawn_slow_left":   this.fireWithCooldown(() => this.fireShot("left",  speed)); break;
-      case "spawn_slow_right":  this.fireWithCooldown(() => this.fireShot("right", speed)); break;
+      case "spawn_fast_left":   this.fireWithCooldown(() => this.fireShot(L,  speed)); break;
+      case "spawn_fast_right":  this.fireWithCooldown(() => this.fireShot(R,  speed)); break;
+      case "spawn_slow_left":   this.fireWithCooldown(() => this.fireShot(L,  speed)); break;
+      case "spawn_slow_right":  this.fireWithCooldown(() => this.fireShot(R,  speed)); break;
 
-      case "block_left":        this.fireWithCooldown(() => this.fireShot("left",  1.0));   break;
-      case "block_right":       this.fireWithCooldown(() => this.fireShot("right", 1.0));   break;
+      case "block_left":        this.fireWithCooldown(() => this.fireShot(L,  1.0));   break;
+      case "block_right":       this.fireWithCooldown(() => this.fireShot(R,  1.0));   break;
       case "block_up":          this.fireWithCooldown(() => this.fireShot(this.currentLane, 1.0)); break;
-      case "block_down":        this.fireWithCooldown(() => this.fireShot(this.oppositeLane(), 1.0)); break;
+      case "block_down":        this.fireWithCooldown(() => this.fireShot(this.oppositeLaneIndex(), 1.0)); break;
 
       case "feint_then_block_up": {
         const lane = this.currentLane;
         this.telegraph(lane);
-        // consume cooldown only when the shot actually fires
         this.time.delayedCall(250, () => {
           this.fireWithCooldown(() => this.fireShot(lane, 1.1));
         });
@@ -374,26 +377,22 @@ class MainScene extends Phaser.Scene {
       }
 
       case "delay_trap":
-        // double-shot but still respect cooldown: only fires if gate is open
         this.time.delayedCall(500, () => {
-          if (this.fireWithCooldown(() => this.fireShot("left", 0.9))) {
-            // optional: allow the paired shot a tiny stagger if you want both
-            this.time.delayedCall(60, () => this.fireWithCooldown(() => this.fireShot("right", 0.9)));
+          if (this.fireWithCooldown(() => this.fireShot(L, 0.9))) {
+            this.time.delayedCall(60, () => this.fireWithCooldown(() => this.fireShot(R, 0.9)));
           }
         });
         break;
     }
-
-    // keep your firstPostGrace fairness logic if you like,
-    // but wrap extra shots with fireWithCooldown as well if needed.
   }
 
-
-  oppositeLane() { return this.currentLane === "left" ? "right" : "left"; }
+  oppositeLaneIndex() {
+    return (this.lanes.length - 1) - this.currentLane; // mirror around center
+  }
 
   // Telegraph flash (cyan) as a warning cue on a lane
-  telegraph(lane) {
-    const pos = this.lanes[lane];
+  telegraph(laneIndex) {
+    const pos = this.lanes[laneIndex];
     const flash = this.add.image(pos.x, pos.y, "telegraphTex").setAlpha(0.9);
     this.tweens.add({
       targets: flash, alpha: 0.15, duration: 200, yoyo: true, repeat: 1,
@@ -401,48 +400,31 @@ class MainScene extends Phaser.Scene {
     });
   }
 
-
-  // Fire a shot (yellow bullet) from Overlord toward target lane
-  // Fire a shot (yellow bullet) from Overlord that will reach the lane x
-// exactly when it reaches the player's y.
-  // Fire a shot that reaches the lane's x exactly when it hits the player's y
-  // Diagonal shot from overlord → lane.x at player.y
-  fireShot(lane, speed = 1.0) {
-    const target = this.lanes[lane];
+  // Fire a shot (yellow bullet) from Overlord to a lane index 0..4
+  fireShot(laneIndex, speed = 1.0) {
+    const target = this.lanes[laneIndex];
     const startX = this.overlord.x;
     const startY = this.overlord.y + 10;
 
-    // Make sure we get a live Arcade body that actually moves
     const bullet = this.physics.add.image(startX, startY, "bulletTex")
       .setActive(true).setVisible(true);
     bullet.body.setAllowGravity(false);
     bullet.body.setCircle(8);
-    bullet.body.moves = true;            // <- important: ensure Arcade updates it
+    bullet.body.moves = true;
     bullet.setData("ttl", this.time.now + 4000);
     this.bullets.add(bullet);
 
-    // Vertical speed (px/s)
-    const vy = 220 + 240 * speed;
-
-    // Time to reach player's Y and the vx needed to cross lane.x at the same time
+    const vy = 220 + 240 * speed;   // Vertical speed (px/s)
     const dy = (target.y - startY);
-    const t  = Math.max(0.001, dy / vy);      // seconds to impact
+    const t  = Math.max(0.001, dy / vy); // seconds to impact
     const dx = (target.x - startX);
     const vx = dx / t;
 
-    // Apply velocity explicitly on the body (avoids rare image setter quirks)
     bullet.body.setVelocity(vx, vy);
 
-    // (Optional) for debugging:
-    // console.log('shot', {lane, vx, vy, t, startX, startY, targetX: target.x, targetY: target.y});
-
-    // Tiny muzzle puff
     const puff = this.add.image(startX, startY, "bulletTex").setAlpha(0.9).setScale(0.6);
     this.tweens.add({ targets: puff, alpha: 0, scale: 2, duration: 120, onComplete: () => puff.destroy() });
   }
-
-
-
 
   // ---------- Death & Restart ----------
   onDeath() {
