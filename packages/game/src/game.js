@@ -1,443 +1,555 @@
-import Phaser from 'phaser';
+import Phaser from "phaser";
 
-// Configuration
-const AI_SERVER_URL = import.meta.env.VITE_AI_SERVER_URL || 'http://localhost:8787';
-const TICK_RATE = 500; // ms between AI decisions (start with on-death only)
+// ---------- Config & ENV ----------
+const AI_URL = import.meta.env.VITE_AI_SERVER_URL || "http://localhost:8787";
+const MOCK_MODE = `${import.meta.env.VITE_MOCK_MODE}`.toLowerCase() === "true";
+const CLIENT_TIMEOUT_MS = 450;
+const TICK_INTERVAL_MS = 700;
 
-// Game state
-let gameState = {
-  playerId: `player_${Math.random().toString(36).substr(2, 9)}`,
-  runId: null,
-  tick: 0,
-  survivalTime: 0,
-  bestTime: parseFloat(localStorage.getItem('bestTime') || '0'),
-  recentMoves: [],
-  lastMove: 'none',
-  latencies: [], // For sparkline
-  overlordMode: 'aggressive',
-  useReactiveMode: false // Start with on-death only
+const GRACE_MS = 1200;   // no AI actions for first 1.2s
+const INVULN_MS = 500;   // ignore collisions right after start/restart
+const SHOT_COOLDOWN_MS = 2000;
+
+// ---------- Lightweight state shared with DOM ----------
+const $time = document.getElementById("survival-time");
+const $latency = document.getElementById("latency");
+const $taunt = document.getElementById("overlord-taunt");
+const $spark = document.getElementById("sparkline");
+const $death = document.getElementById("death-modal");
+const $final = document.getElementById("final-time");
+const $best = document.getElementById("best-time");
+const $mode = document.getElementById("mode-selector");
+
+// Tiny latency sparkline buffer
+const latencyHistory = [];
+const drawSpark = () => {
+  const c = $spark;
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (latencyHistory.length < 2) return;
+  const data = latencyHistory.slice(-40);
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = Math.max(1, max - min);
+  const w = c.width, h = c.height;
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = (i / (data.length - 1)) * (w - 2) + 1;
+    const y = h - 1 - ((v - min) / range) * (h - 2);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = "#00ffff";
+  ctx.lineWidth = 1;
+  ctx.stroke();
 };
 
-// Main Game Scene
-class GameScene extends Phaser.Scene {
+// ---------- Helpers ----------
+const uuid = () =>
+  crypto.randomUUID ? crypto.randomUUID() :
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+
+const loadBest = () => parseFloat(localStorage.getItem("best_time") || "0") || 0;
+const saveBest = (v) => localStorage.setItem("best_time", String(v.toFixed(1)));
+
+const playerId = (() => {
+  const k = "player_id";
+  let p = localStorage.getItem(k);
+  if (!p) { p = uuid(); localStorage.setItem(k, p); }
+  return p;
+})();
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ======================================================
+//                    PHASER SCENE
+// ======================================================
+class MainScene extends Phaser.Scene {
   constructor() {
-    super({ key: 'GameScene' });
-    this.player = null;
-    this.obstacles = [];
-    this.lanes = {};
-    this.startTime = null;
-    this.lastDecisionTime = 0;
+    super("main");
+    this.resetRun();
+  }
+
+  init() { this.resetRun(); }
+
+  resetRun() {
+    this.runId = uuid();
+    this.tick = 0;
+    this.survivalStart = 0;
+    this.currentTime = 0;
+    this.bestTime = loadBest();
+    this.lastMove = "none";
+    this.recentMoves = [];
+    this.dead = false;
+    this.nextFireAt = 0;
+    this.bullets = null;     // ONLY projectiles
+    this.overlord = null;
+
+    this.graceUntil = 0;
+    this.invulnUntil = 0;
+    this.firstPostGrace = true;
+
+    // Touch tracking
+    this.touchStart = { x: 0, y: 0, t: 0 };
   }
 
   preload() {
-    // We'll use simple shapes, no assets to load
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+
+    // bullet (yellow circle, 16x16)
+    g.clear(); g.fillStyle(0xffff00, 1); g.fillCircle(8, 8, 8);
+    g.generateTexture("bulletTex", 16, 16);
+
+    // player (white circle, 26x26)
+    g.clear(); g.fillStyle(0xffffff, 1); g.fillCircle(13, 13, 13);
+    g.generateTexture("playerTex", 26, 26);
+
+    // overlord (green circle, 28x28)
+    g.clear(); g.fillStyle(0x00ff66, 1); g.fillCircle(14, 14, 14);
+    g.generateTexture("overlordTex", 28, 28);
+
+    // telegraph (cyan, 80x18)
+    g.clear(); g.fillStyle(0x00ffff, 0.9); g.fillRect(0, 0, 80, 18);
+    g.generateTexture("telegraphTex", 80, 18);
+
+    g.destroy();
+  }
+
+  // set lane by index 0..4
+  setLane(laneIndex) {
+    const idx = Phaser.Math.Clamp(typeof laneIndex === "number" ? laneIndex : this.currentLane, 0, this.lanes.length - 1);
+    this.currentLane = idx;
+    this.lastMove = String(idx);
+    this.recentMoves.push(idx);
+    if (this.recentMoves.length > 8) this.recentMoves.shift();
+
+    const pos = this.lanes[idx];
+    const dot = this.add.circle(pos.x, pos.y, 5, 0x00ff00, 0.9);
+    this.tweens.add({ targets: dot, alpha: 0, duration: 120, onComplete: () => dot.destroy() });
   }
 
   create() {
-    // Reset for new run
-    gameState.runId = crypto.randomUUID();
-    gameState.tick = 0;
-    gameState.recentMoves = [];
-    gameState.lastMove = 'none';
-    this.startTime = Date.now();
-    
-    // Create arena
-    this.createArena();
-    
-    // Create player
-    this.createPlayer();
-    
-    // Setup controls
-    this.setupControls();
-    
-    // Start survival timer
-    this.startSurvivalTimer();
-    
-    // Initial AI decision (after slight delay)
-    this.time.delayedCall(1000, () => {
-      this.requestAIDecision();
-    });
-  }
+    const w = this.scale.gameSize.width;
+    const h = this.scale.gameSize.height;
 
-  createArena() {
-    const { width, height } = this.scale;
-    
-    // Create 4 lanes (visual guides)
-    const laneWidth = width / 4;
-    
-    this.lanes = {
-      left: { x: laneWidth * 0.5, y: height / 2, width: laneWidth - 10, height: height - 100 },
-      down: { x: laneWidth * 1.5, y: height / 2, width: laneWidth - 10, height: height - 100 },
-      up: { x: laneWidth * 2.5, y: height / 2, width: laneWidth - 10, height: height - 100 },
-      right: { x: laneWidth * 3.5, y: height / 2, width: laneWidth - 10, height: height - 100 }
-    };
-    
-    // Draw lane boundaries
-    Object.entries(this.lanes).forEach(([name, lane]) => {
-      const rect = this.add.rectangle(lane.x, lane.y, lane.width, lane.height);
-      rect.setStrokeStyle(2, 0x333333);
-      
-      // Lane labels
-      this.add.text(lane.x, 30, name.toUpperCase(), {
-        fontSize: '16px',
-        color: '#666',
-        align: 'center'
-      }).setOrigin(0.5);
-    });
-  }
+    // Physics group (bullets)
+    this.bullets = this.physics.add.group();
 
-  createPlayer() {
-    const { width, height } = this.scale;
-    this.player = this.add.circle(width / 2, height - 100, 15, 0x00ff00);
-    this.physics.add.existing(this.player);
-    this.player.body.setCollideWorldBounds(true);
-    this.player.currentLane = 'down'; // Start in down lane
-  }
+    // Arena edges FIRST
+    this.arenaLeft  = w * 0.26;
+    this.arenaRight = w * 0.74;
+    const playerY = h * 0.78;
 
-  setupControls() {
-    // Keyboard controls
+    // Five lanes 0..4 within arena
+    const makeLaneX = (i) => Phaser.Math.Linear(this.arenaLeft, this.arenaRight, (i + 1) / 6);
+    this.lanes = Array.from({ length: 5 }, (_, i) => new Phaser.Math.Vector2(makeLaneX(i), playerY));
+    this.currentLane = 2; // center
+
+    // Overlord (top center, green)
+    this.overlord = this.add.image(w / 2, h * 0.12, "overlordTex");
+
+    // Visual guides
+    this.drawGuides(w, h, playerY);
+
+    // Player (white)
+    this.player = this.physics.add.image(this.lanes[this.currentLane].x, playerY, "playerTex");
+    this.player.setImmovable(true);
+    this.player.body.setAllowGravity(false);
+    this.player.body.setCircle(13);
+
+    // Collision: bullets kill
+    this.physics.add.overlap(this.player, this.bullets, () => {
+      if (this.time.now < this.invulnUntil) return;
+      this.onDeath();
+    }, null, this);
+
+    // Keyboard: ONLY arrow keys
     this.cursors = this.input.keyboard.createCursorKeys();
-    
-    // Touch/mouse controls
-    this.input.on('pointerdown', (pointer) => {
-      const { width } = this.scale;
-      const laneWidth = width / 4;
-      const lane = Math.floor(pointer.x / laneWidth);
-      
-      this.moveToLane(['left', 'down', 'up', 'right'][lane]);
+
+    // Focus keys
+    this.input.keyboard.preventDefault = true;
+    this.game.canvas.setAttribute("tabindex", "0");
+    this.game.canvas.focus();
+
+    // --- Touch input (swipe & tap) ---
+    // Allow multi-pointer on mobile (a couple extra just in case)
+    this.input.addPointer(2);
+
+    // Avoid page scroll/zoom gestures interfering with gameplay
+    if (this.game.canvas && this.game.canvas.style) {
+      this.game.canvas.style.touchAction = "none";
+    }
+
+    // Track touch start
+    this.input.on("pointerdown", (p) => {
+      if (p.primaryDown) {
+        this.touchStart.x = p.x;
+        this.touchStart.y = p.y;
+        this.touchStart.t = this.time.now;
+      }
+    });
+
+    // On release, decide swipe vs tap
+    this.input.on("pointerup", (p) => {
+      const dt = this.time.now - this.touchStart.t;
+      const dx = p.x - this.touchStart.x;
+      const dy = p.y - this.touchStart.y;
+
+      const SWIPE_MIN_DIST = 40;   // px
+      const SWIPE_MAX_TIME = 450;  // ms
+      const TAP_MAX_DIST   = 12;   // px
+      const TAP_MAX_TIME   = 220;  // ms
+
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      // Horizontal swipe
+      if (dt <= SWIPE_MAX_TIME && absX >= SWIPE_MIN_DIST && absX > absY) {
+        if (dx < 0) this.setLane(this.currentLane - 1);
+        else this.setLane(this.currentLane + 1);
+        return;
+      }
+
+      // Tap -> jump to nearest lane (if inside arena rect)
+      if (dt <= TAP_MAX_TIME && absX <= TAP_MAX_DIST && absY <= TAP_MAX_DIST) {
+        if (p.x >= this.arenaLeft && p.x <= this.arenaRight) {
+          // Find nearest lane by x
+          let bestI = 0, bestD = Infinity;
+          this.lanes.forEach((v, i) => {
+            const d = Math.abs(v.x - p.x);
+            if (d < bestD) { bestD = d; bestI = i; }
+          });
+          this.setLane(bestI);
+        }
+      }
+    });
+    // --- End touch input ---
+
+    // Start timing/UI
+    this.survivalStart = this.time.now;
+    this.graceUntil = this.survivalStart + GRACE_MS;
+    this.invulnUntil = this.survivalStart + INVULN_MS;
+    $time.textContent = "0.0s";
+    $taunt.textContent = "Overlord is watching...";
+    $latency.textContent = "---";
+    $death.classList.remove("show");
+    drawSpark();
+
+    // Decision tick
+    this.decisionTimer = this.time.addEvent({
+      delay: TICK_INTERVAL_MS,
+      loop: true,
+      callback: () => this.makeDecisionTick()
+    });
+
+    // Handle resize: recompute lane anchors & positions
+    this.scale.on("resize", (size) => {
+      const W = size.width, H = size.height;
+      this.arenaLeft  = W * 0.26;
+      this.arenaRight = W * 0.74;
+      const PY = H * 0.78;
+      const makeLaneX = (i) => Phaser.Math.Linear(this.arenaLeft, this.arenaRight, (i + 1) / 6);
+      this.lanes.forEach((v, i) => v.set(makeLaneX(i), PY));
+      this.overlord.setPosition(W / 2, H * 0.12);
     });
   }
 
-  moveToLane(lane) {
-    if (!this.lanes[lane] || !this.player.active) return;
-    
-    // Record move
-    gameState.lastMove = lane;
-    gameState.recentMoves.push(lane);
-    if (gameState.recentMoves.length > 10) {
-      gameState.recentMoves.shift();
-    }
-    
-    // Animate movement
-    this.tweens.add({
-      targets: this.player,
-      x: this.lanes[lane].x,
-      duration: 200,
-      ease: 'Power2'
+  drawGuides(w, h, playerY) {
+    const g = this.add.graphics();
+
+    // Arena box
+    g.lineStyle(1, 0x4aa3ff, 0.35);
+    g.strokeRect(this.arenaLeft, h * 0.12, this.arenaRight - this.arenaLeft, h * 0.70);
+
+    // Lane separators (5 lanes)
+    g.lineStyle(1, 0xff0040, 0.25);
+    g.beginPath();
+    this.lanes.forEach(v => {
+      g.moveTo(v.x, h * 0.12);
+      g.lineTo(v.x, h * 0.82);
     });
-    
-    this.player.currentLane = lane;
+    g.closePath(); g.strokePath();
+
+    // Player row line
+    g.lineStyle(1, 0x999999, 0.2);
+    g.beginPath(); g.moveTo(this.arenaLeft, playerY); g.lineTo(this.arenaRight, playerY); g.strokePath();
   }
 
   update() {
-    if (!this.player.active) return;
-    
-    // Handle keyboard input
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
-      this.moveToLane('left');
-    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
-      this.moveToLane('right');
-    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
-      this.moveToLane('up');
-    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.down)) {
-      this.moveToLane('down');
-    }
-    
-    // Check collisions
-    this.checkCollisions();
-    
-    // Request AI decision if in reactive mode
-    if (gameState.useReactiveMode) {
-      const now = Date.now();
-      if (now - this.lastDecisionTime > TICK_RATE) {
-        this.requestAIDecision();
-        this.lastDecisionTime = now;
-      }
-    }
-  }
+    if (this.dead) return;
 
-  checkCollisions() {
-    this.obstacles.forEach(obstacle => {
-      if (obstacle.active && Phaser.Geom.Intersects.RectangleToRectangle(
-        this.player.getBounds(),
-        obstacle.getBounds()
-      )) {
-        this.playerDeath();
-      }
+    // Arrow keys to move between lane indices
+    if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
+      this.setLane(this.currentLane - 1);
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
+      this.setLane(this.currentLane + 1);
+    }
+
+    // Smooth snap along X; Y fixed
+    const target = this.lanes[this.currentLane];
+    this.player.x += (target.x - this.player.x) * 0.35;
+
+    // Timer
+    this.currentTime = (this.time.now - this.survivalStart) / 1000;
+    $time.textContent = `${this.currentTime.toFixed(1)}s`;
+
+    // Cleanup
+    this.bullets.getChildren().forEach(b => {
+      if (b.getData("ttl") && this.time.now > b.getData("ttl")) b.destroy();
+      if (b.y > this.scale.gameSize.height + 40) b.destroy();
     });
   }
 
-  async requestAIDecision() {
-    if (!this.player.active) return;
-    
-    gameState.tick++;
-    
-    const requestData = {
-      player_id: gameState.playerId,
-      run_id: gameState.runId,
-      tick: gameState.tick,
-      last_move: gameState.lastMove,
-      recent_moves: gameState.recentMoves.slice(-5),
-      session_stats: {
-        best_time: gameState.bestTime,
-        current_time: gameState.survivalTime
-      },
-      overlord_mode: gameState.overlordMode
+  fireWithCooldown(fireFn) {
+    const now = this.time.now;
+    if (now < this.nextFireAt) return false;   // still cooling down
+    fireFn();
+    this.nextFireAt = now + SHOT_COOLDOWN_MS;
+    return true;
+  }
+
+  // ---------- Decision Tick ----------
+  async makeDecisionTick() {
+    if (this.dead) return;
+    if (this.time.now < this.graceUntil) return;
+    this.tick++;
+
+    const stats = { best_time: this.bestTime, current_time: this.currentTime };
+    const payload = {
+      player_id: playerId,
+      run_id: this.runId,
+      tick: this.tick,
+      last_move: this.lastMove || "none",
+      recent_moves: this.recentMoves,
+      session_stats: stats,
+      overlord_mode: ($mode?.value || "aggressive")
     };
-    
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+
+    let usedMock = MOCK_MODE;
+    let decision = null;
+    const started = performance.now();
+
     try {
-      const response = await fetch(`${AI_SERVER_URL}/decide`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData),
-        signal: AbortSignal.timeout(450)
-      });
-      
-      const decision = await response.json();
-      
-      // Update UI with latency
-      this.updateLatencyDisplay(decision.latency_ms);
-      
-      // Update taunt
-      document.getElementById('overlord-taunt').textContent = decision.explain || 'Processing...';
-      
-      // Execute decision
-      this.executeAIDecision(decision);
-      
-    } catch (error) {
-      console.error('AI decision failed:', error);
-      // Use fallback
-      this.executeAIDecision(this.getFallbackDecision());
-      document.getElementById('latency').textContent = 'timeout';
+      if (!usedMock) {
+        const res = await fetch(`${AI_URL}/decide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        decision = await res.json();
+      }
+    } catch {
+      usedMock = true;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (usedMock) {
+      const actions = [
+        "block_left","block_right",
+        "spawn_fast_left","spawn_fast_right",
+        "spawn_slow_left","spawn_slow_right",
+        "feint_then_block_up","delay_trap",
+        "block_left","block_right"
+      ];
+      const choice = actions[(this.tick - 1) % actions.length];
+      decision = this.mockDecision(choice);
+    }
+
+    const latency = Math.round(performance.now() - started);
+    $latency.textContent = usedMock ? `${latency}ms (mock)` : `${latency}ms`;
+    latencyHistory.push(latency); if (latencyHistory.length > 200) latencyHistory.shift();
+    drawSpark();
+
+    if (decision && decision.decision) {
+      this.applyDecision(decision);
+      if (decision.explain) $taunt.textContent = decision.explain;
     }
   }
 
-  executeAIDecision(decision) {
-    const action = decision.decision;
-    const params = decision.params || {};
-    
-    // Map actions to game effects
-    switch(action) {
-      case 'block_left':
-      case 'block_right':
-      case 'block_up':
-      case 'block_down':
-        const lane = action.replace('block_', '');
-        this.spawnBlock(lane, params.duration_ms || 1000);
-        break;
-        
-      case 'spawn_fast_right':
-      case 'spawn_fast_left':
-        const side = action.includes('right') ? 'right' : 'left';
-        this.spawnMovingObstacle(side, params.speed || 1.5);
-        break;
-        
-      case 'spawn_slow_right':
-      case 'spawn_slow_left':
-        const slowSide = action.includes('right') ? 'right' : 'left';
-        this.spawnMovingObstacle(slowSide, params.speed || 0.7);
-        break;
-        
-      case 'feint_then_block_up':
-        this.spawnFeint('up', params.duration_ms || 1000);
-        break;
-        
-      case 'delay_trap':
-        this.time.delayedCall(500, () => {
-          ['left', 'right', 'up', 'down'].forEach(lane => {
-            this.spawnBlock(lane, 300);
-          });
+  mockDecision(choice) {
+    const between = (a,b) => a + Math.floor(Math.random()*(b-a+1));
+    const speeds = {
+      fast: (12 + Math.random()*6) / 10, // 1.2-1.8
+      slow: (6 + Math.random()*4) / 10   // 0.6-1.0
+    };
+    const params = {};
+    switch (choice) {
+      case "spawn_fast_left":
+      case "spawn_fast_right":
+        params.speed = clamp(speeds.fast, 1.2, 1.6); break;
+      case "spawn_slow_left":
+      case "spawn_slow_right":
+        params.speed = clamp(speeds.slow, 0.6, 0.9); break;
+      case "feint_then_block_up":
+        params.duration_ms = between(800, 1200); break; // unused, but kept for contract parity
+      case "delay_trap":
+        params.duration_ms = between(300, 400); break;  // unused
+      case "block_left":
+      case "block_right":
+      default:
+        params.speed = 1.0; break;
+    }
+    return {
+      decision: choice,
+      params,
+      explain: `Mock: ${choice} ${Object.keys(params).length ? JSON.stringify(params) : ""}`.trim(),
+      latency_ms: 0
+    };
+  }
+
+  // ---------- Apply actions (bullets only) ----------
+  applyDecision({ decision, params = {} }) {
+    const speed = params.speed ?? 1.0;
+    const L = 0, R = this.lanes.length - 1;
+
+    switch (decision) {
+      case "spawn_fast_left":   this.fireWithCooldown(() => this.fireShot(L,  speed)); break;
+      case "spawn_fast_right":  this.fireWithCooldown(() => this.fireShot(R,  speed)); break;
+      case "spawn_slow_left":   this.fireWithCooldown(() => this.fireShot(L,  speed)); break;
+      case "spawn_slow_right":  this.fireWithCooldown(() => this.fireShot(R,  speed)); break;
+
+      case "block_left":        this.fireWithCooldown(() => this.fireShot(L,  1.0));   break;
+      case "block_right":       this.fireWithCooldown(() => this.fireShot(R,  1.0));   break;
+      case "block_up":          this.fireWithCooldown(() => this.fireShot(this.currentLane, 1.0)); break;
+      case "block_down":        this.fireWithCooldown(() => this.fireShot(this.oppositeLaneIndex(), 1.0)); break;
+
+      case "feint_then_block_up": {
+        const lane = this.currentLane;
+        this.telegraph(lane);
+        this.time.delayedCall(250, () => {
+          this.fireWithCooldown(() => this.fireShot(lane, 1.1));
         });
         break;
-        
-      default:
-        console.warn('Unknown action:', action);
+      }
+
+      case "delay_trap":
+        this.time.delayedCall(500, () => {
+          if (this.fireWithCooldown(() => this.fireShot(L, 0.9))) {
+            this.time.delayedCall(60, () => this.fireWithCooldown(() => this.fireShot(R, 0.9)));
+          }
+        });
+        break;
     }
   }
 
-  spawnBlock(lane, duration) {
-    if (!this.lanes[lane]) return;
-    
-    const block = this.add.rectangle(
-      this.lanes[lane].x,
-      this.lanes[lane].y,
-      this.lanes[lane].width - 20,
-      50,
-      0xff0040
-    );
-    
-    this.physics.add.existing(block, true);
-    this.obstacles.push(block);
-    
-    // Remove after duration
-    this.time.delayedCall(duration, () => {
-      block.destroy();
-      const index = this.obstacles.indexOf(block);
-      if (index > -1) this.obstacles.splice(index, 1);
-    });
+  oppositeLaneIndex() {
+    return (this.lanes.length - 1) - this.currentLane; // mirror around center
   }
 
-  spawnMovingObstacle(fromSide, speed) {
-    const { width, height } = this.scale;
-    const startX = fromSide === 'left' ? -50 : width + 50;
-    const targetX = fromSide === 'left' ? width + 50 : -50;
-    
-    const obstacle = this.add.circle(startX, height / 2, 20, 0xff8800);
-    this.physics.add.existing(obstacle);
-    this.obstacles.push(obstacle);
-    
+  // Telegraph flash (cyan) as a warning cue on a lane
+  telegraph(laneIndex) {
+    const pos = this.lanes[laneIndex];
+    const flash = this.add.image(pos.x, pos.y, "telegraphTex").setAlpha(0.9);
     this.tweens.add({
-      targets: obstacle,
-      x: targetX,
-      duration: 3000 / speed,
-      onComplete: () => {
-        obstacle.destroy();
-        const index = this.obstacles.indexOf(obstacle);
-        if (index > -1) this.obstacles.splice(index, 1);
-      }
+      targets: flash, alpha: 0.15, duration: 200, yoyo: true, repeat: 1,
+      onComplete: () => flash.destroy()
     });
   }
 
-  spawnFeint(lane, duration) {
-    // Create a fake threat
-    const feint = this.add.rectangle(
-      this.lanes[lane].x,
-      this.lanes[lane].y,
-      this.lanes[lane].width - 20,
-      30,
-      0x880088,
-      0.5
-    );
-    
-    // After 250ms, spawn real block
-    this.time.delayedCall(250, () => {
-      feint.destroy();
-      this.spawnBlock(lane, duration - 250);
-    });
+  // Fire a shot (yellow bullet) from Overlord to a lane index 0..4
+  fireShot(laneIndex, speed = 1.0) {
+    const target = this.lanes[laneIndex];
+    const startX = this.overlord.x;
+    const startY = this.overlord.y + 10;
+
+    const bullet = this.physics.add.image(startX, startY, "bulletTex")
+      .setActive(true).setVisible(true);
+    bullet.body.setAllowGravity(false);
+    bullet.body.setCircle(8);
+    bullet.body.moves = true;
+    bullet.setData("ttl", this.time.now + 4000);
+    this.bullets.add(bullet);
+
+    const vy = 220 + 240 * speed;   // Vertical speed (px/s)
+    const dy = (target.y - startY);
+    const t  = Math.max(0.001, dy / vy); // seconds to impact
+    const dx = (target.x - startX);
+    const vx = dx / t;
+
+    bullet.body.setVelocity(vx, vy);
+
+    const puff = this.add.image(startX, startY, "bulletTex").setAlpha(0.9).setScale(0.6);
+    this.tweens.add({ targets: puff, alpha: 0, scale: 2, duration: 120, onComplete: () => puff.destroy() });
   }
 
-  getFallbackDecision() {
-    const actions = ['block_left', 'block_right', 'spawn_fast_right', 'spawn_fast_left'];
-    return {
-      decision: actions[Math.floor(Math.random() * actions.length)],
-      params: { duration_ms: 800, speed: 1.2 },
-      explain: 'Fallback pattern engaged'
+  // ---------- Death & Restart ----------
+  onDeath() {
+    if (this.dead) return;
+    this.dead = true;
+
+    if (this.decisionTimer) this.decisionTimer.remove(false);
+    this.bullets.getChildren().forEach(o => { o.body?.setVelocity(0); });
+    $taunt.textContent = "The Overlord cackles…";
+
+    const final = Number(this.currentTime.toFixed(1));
+    const best = Math.max(final, this.bestTime);
+    this.bestTime = best; saveBest(best);
+    $final.textContent = final.toFixed(1);
+    $best.textContent = best.toFixed(1);
+    $death.classList.add("show");
+
+    this.onDeathExplain(final).catch(() => {});
+  }
+
+  async onDeathExplain(finalTime) {
+    if (MOCK_MODE) { $taunt.textContent = `Mock: you lasted ${finalTime.toFixed(1)}s. I will toy with you again.`; return; }
+    const payload = {
+      player_id: playerId, run_id: this.runId, tick: this.tick,
+      last_move: this.lastMove || "none", recent_moves: this.recentMoves,
+      session_stats: { best_time: this.bestTime, current_time: finalTime },
+      overlord_mode: ($mode?.value || "aggressive")
     };
-  }
-
-  startSurvivalTimer() {
-    this.survivalTimer = this.time.addEvent({
-      delay: 100,
-      callback: () => {
-        gameState.survivalTime = (Date.now() - this.startTime) / 1000;
-        document.getElementById('survival-time').textContent = 
-          `${gameState.survivalTime.toFixed(1)}s`;
-      },
-      loop: true
-    });
-  }
-
-  updateLatencyDisplay(latency) {
-    // Update text
-    document.getElementById('latency').textContent = latency;
-    
-    // Add to sparkline data
-    gameState.latencies.push(latency);
-    if (gameState.latencies.length > 20) {
-      gameState.latencies.shift();
-    }
-    
-    // Draw sparkline
-    this.drawSparkline();
-  }
-
-  drawSparkline() {
-    const canvas = document.getElementById('sparkline');
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width = 60;
-    const height = canvas.height = 20;
-    
-    ctx.clearRect(0, 0, width, height);
-    
-    if (gameState.latencies.length < 2) return;
-    
-    const max = Math.max(...gameState.latencies);
-    const min = Math.min(...gameState.latencies);
-    const range = max - min || 1;
-    
-    ctx.strokeStyle = '#00ffff';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    
-    gameState.latencies.forEach((latency, i) => {
-      const x = (i / (gameState.latencies.length - 1)) * width;
-      const y = height - ((latency - min) / range) * height;
-      
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
-      }
-    });
-    
-    ctx.stroke();
-  }
-
-  playerDeath() {
-    if (!this.player.active) return;
-    
-    this.player.active = false;
-    this.player.setVisible(false);
-    
-    // Update best time
-    if (gameState.survivalTime > gameState.bestTime) {
-      gameState.bestTime = gameState.survivalTime;
-      localStorage.setItem('bestTime', gameState.bestTime.toString());
-    }
-    
-    // Show death modal
-    document.getElementById('final-time').textContent = gameState.survivalTime.toFixed(1);
-    document.getElementById('best-time').textContent = gameState.bestTime.toFixed(1);
-    document.getElementById('death-modal').classList.add('show');
-    
-    // Request final AI decision for learning
-    this.requestAIDecision();
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${AI_URL}/decide`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload), signal: controller.signal
+      });
+      const json = await res.json();
+      if (json?.explain) $taunt.textContent = json.explain;
+    } catch { $taunt.textContent = "Cerebras: timeout (fallback)"; }
+    finally { clearTimeout(t); }
   }
 }
 
-// Phaser configuration
-const config = {
+// ---------- Boot the game ----------
+const parent = document.getElementById("game-canvas");
+const WIDTH = parent?.clientWidth || 800;
+const HEIGHT = parent?.clientHeight || 600;
+
+const game = new Phaser.Game({
   type: Phaser.AUTO,
-  parent: 'game-canvas',
-  width: 800,
-  height: 600,
-  backgroundColor: '#0a0a0a',
-  physics: {
-    default: 'arcade',
-    arcade: {
-      gravity: { y: 0 }
-    }
-  },
-  scene: GameScene,
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
-  }
-};
-
-// Create game
-const game = new Phaser.Game(config);
-
-// Global restart function
-window.restartGame = () => {
-  document.getElementById('death-modal').classList.remove('show');
-  game.scene.getScene('GameScene').scene.restart();
-};
-
-// Mode selector
-document.getElementById('mode-selector').addEventListener('change', (e) => {
-  gameState.overlordMode = e.target.value;
+  parent: "game-canvas",
+  width: WIDTH,
+  height: HEIGHT,
+  backgroundColor: "#101010",
+  physics: { default: "arcade", arcade: { debug: false } },
+  scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
+  scene: [MainScene],
 });
 
-// Display initial best time
-document.getElementById('best-time').textContent = gameState.bestTime.toFixed(1);
+// ---- Restart handler for the Try Again button ----
+window.restartGame = () => {
+  document.getElementById("death-modal")?.classList.remove("show");
+  const s = game.scene.getScene?.("main") || game.scene.keys?.main;
+  if (s && s.scene) s.scene.restart();
+  else {
+    game.scene.stop("main");
+    game.scene.remove("main");
+    game.scene.add("main", MainScene, true);
+  }
+  game.canvas?.setAttribute("tabindex", "0");
+  game.canvas?.focus();
+};
