@@ -110,8 +110,8 @@ function predictNextLane(recentLanes, lastMove) {
     let predicted = current + recentMovement;
     
     // If prediction goes out of bounds, assume they'll reverse
-    if (predicted < 0) predicted = 1;
-    if (predicted > 4) predicted = 3;
+    if (predicted < 0) predicted = 0;
+    if (predicted > 4) predicted = 4;
     
     return predicted;
   }

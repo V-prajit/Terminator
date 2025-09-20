@@ -483,7 +483,7 @@ export class OverlordGame {
     const speed = params.speed || 1.0;
     
     for (let i = 0; i < Math.min(count, lanes.length); i++) {
-      const lane = Math.max(0, Math.min(4, lanes[i] || 2));
+      const lane = Math.max(0, Math.min(4, lanes[i] ?? 2));
       
       // Telegraph warning - much shorter duration
       const laneX = this.getLaneX(lane);
@@ -537,8 +537,8 @@ export class OverlordGame {
   getLaneX(lane) {
     // Ensure lane is within bounds
     lane = Math.max(0, Math.min(4, lane));
-    const laneWidth = this.width / 6;
-    return laneWidth * (lane + 1);
+    const laneWidth = this.width / 5;
+    return laneWidth * (lane + 0.5);
   }
   
   getLaneY() {
@@ -625,8 +625,8 @@ export class OverlordGame {
     // Draw lanes
     this.ctx.strokeStyle = 'rgba(255, 0, 64, 0.2)';
     this.ctx.lineWidth = 2;
-    for (let i = 0; i <= 5; i++) {
-      const x = (this.width / 6) * i;
+    for (let i = 0; i <= 4; i++) {
+      const x = (this.width / 5) * i;
       this.ctx.beginPath();
       this.ctx.moveTo(x, 0);
       this.ctx.lineTo(x, this.height);
