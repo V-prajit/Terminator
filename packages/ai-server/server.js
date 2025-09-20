@@ -140,7 +140,7 @@ Return JSON exactly like:
   if (!ACTIONS.includes(decision)) decision = 'spawn_fast_left';
 
   const p = out.params || {};
-  const duration_ms = clamp(parseInt(p.duration_ms ?? 800, 10) || 800, 200, 1500);
+_ms = clamp(parseInt(p.duration_ms ?? 800, 10) || 800, 200, 1500);
   const speed = clamp(Number(p.speed ?? 1.2) || 1.2, 0.8, 1.6);
 
   const explain = typeof out.explain === 'string' ? out.explain : 'balanced move';

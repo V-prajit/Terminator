@@ -359,7 +359,6 @@ class MainScene extends Phaser.Scene {
         "block_left","block_right",
         "spawn_fast_left","spawn_fast_right",
         "spawn_slow_left","spawn_slow_right",
-        "feint_then_block_up","delay_trap",
         "block_left","block_right"
       ];
       const choice = actions[(this.tick - 1) % actions.length];
@@ -391,10 +390,6 @@ class MainScene extends Phaser.Scene {
       case "spawn_slow_left":
       case "spawn_slow_right":
         params.speed = clamp(speeds.slow, 0.6, 0.9); break;
-      case "feint_then_block_up":
-        params.duration_ms = between(800, 1200); break; // unused, but kept for contract parity
-      case "delay_trap":
-        params.duration_ms = between(300, 400); break;  // unused
       case "block_left":
       case "block_right":
       default:
@@ -419,6 +414,7 @@ class MainScene extends Phaser.Scene {
           const lane = Phaser.Math.Clamp(params.lane_index, 0, R);
           this.fireWithCooldown(() => this.fireShot(lane, speed));
         }
+        break;
       }
       case "spawn_fast_left":   this.fireWithCooldown(() => this.fireShot(L,  speed)); break;
       case "spawn_fast_right":  this.fireWithCooldown(() => this.fireShot(R,  speed)); break;
@@ -429,23 +425,6 @@ class MainScene extends Phaser.Scene {
       case "block_right":       this.fireWithCooldown(() => this.fireShot(R,  1.0));   break;
       case "block_up":          this.fireWithCooldown(() => this.fireShot(this.currentLane, 1.0)); break;
       case "block_down":        this.fireWithCooldown(() => this.fireShot(this.oppositeLaneIndex(), 1.0)); break;
-
-      case "feint_then_block_up": {
-        const lane = this.currentLane;
-        this.telegraph(lane);
-        this.time.delayedCall(250, () => {
-          this.fireWithCooldown(() => this.fireShot(lane, 1.1));
-        });
-        break;
-      }
-
-      case "delay_trap":
-        this.time.delayedCall(500, () => {
-          if (this.fireWithCooldown(() => this.fireShot(L, 0.9))) {
-            this.time.delayedCall(60, () => this.fireWithCooldown(() => this.fireShot(R, 0.9)));
-          }
-        });
-        break;
     }
   }
 
