@@ -1,0 +1,202 @@
+<!-- desktop.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Overlord AI - Desktop</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: #0a0a0a;
+        color: #fff;
+        font-family: "Courier New", monospace;
+        overflow: hidden;
+        display: flex;
+      }
+      #game-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      #hud {
+        display: flex;
+        justify-content: space-between;
+        padding: 15px;
+        background: rgba(0, 0, 0, 0.9);
+        border-bottom: 2px solid #ff0040;
+      }
+      #canvas-wrapper {
+        flex: 1;
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: #101010;
+      }
+      canvas {
+        max-width: 100%;
+        max-height: 100%;
+        border: 1px solid #333;
+      }
+      #taunt-footer {
+        padding: 15px;
+        background: rgba(255, 0, 64, 0.1);
+        border-top: 2px solid #ff0040;
+        text-align: center;
+        font-style: italic;
+        color: #ff0040;
+        min-height: 60px;
+      }
+      #debug-panel {
+        width: 300px;
+        background: rgba(0, 20, 40, 0.95);
+        border-left: 1px solid #00ffff;
+        padding: 15px;
+        overflow-y: auto;
+        font-size: 12px;
+      }
+      #debug-panel h3 {
+        color: #00ffff;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #00ffff;
+        padding-bottom: 5px;
+      }
+      .debug-row {
+        margin: 5px 0;
+        display: flex;
+        justify-content: space-between;
+      }
+      .debug-label {
+        color: #888;
+      }
+      .debug-value {
+        color: #0ff;
+      }
+      #death-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.95);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+      #death-modal.show {
+        display: flex;
+      }
+      .death-title {
+        font-size: 48px;
+        color: #ff0040;
+        margin-bottom: 20px;
+        animation: pulse 1s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .retry-btn {
+        padding: 15px 40px;
+        font-size: 20px;
+        background: #ff0040;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        text-transform: uppercase;
+      }
+      .retry-btn:hover {
+        background: #ff0060;
+      }
+      #qr-code {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        background: white;
+        padding: 10px;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <div id="hud">
+        <div>
+          <div>TIME: <span id="survival-time">0.0s</span></div>
+          <div>BEST: <span id="best-time">0.0s</span></div>
+        </div>
+        <div>
+          <div>
+            MODE:
+            <select id="mode-selector">
+              <option value="aggressive">Aggressive</option>
+              <option value="chill">Chill</option>
+            </select>
+          </div>
+          <div>RTT: <span id="rtt">---</span>ms</div>
+        </div>
+      </div>
+      <div id="canvas-wrapper">
+        <canvas id="game-canvas"></canvas>
+        <div id="qr-code">📱 Scan for Mobile</div>
+      </div>
+      <div id="taunt-footer">Initializing Overlord AI...</div>
+    </div>
+
+    <div id="debug-panel">
+      <h3>🎯 Debug Telemetry</h3>
+      <div class="debug-row">
+        <span class="debug-label">Predicted Lane:</span>
+        <span class="debug-value" id="dbg-predicted">-</span>
+      </div>
+      <div class="debug-row">
+        <span class="debug-label">Chosen Lanes:</span>
+        <span class="debug-value" id="dbg-lanes">[]</span>
+      </div>
+      <div class="debug-row">
+        <span class="debug-label">Dirs:</span>
+        <span class="debug-value" id="dbg-dirs">[]</span>
+      </div>
+      <div class="debug-row">
+        <span class="debug-label">Decision:</span>
+        <span class="debug-value" id="dbg-decision">-</span>
+      </div>
+      <div class="debug-row">
+        <span class="debug-label">Explain:</span>
+        <span class="debug-value" id="dbg-explain">-</span>
+      </div>
+      <div class="debug-row">
+        <span class="debug-label">Last RTT:</span>
+        <span class="debug-value" id="dbg-rtt">-</span>
+      </div>
+      <div class="debug-row">
+        <span class="debug-label">Challenge Rate:</span>
+        <span class="debug-value" id="dbg-challenge">0%</span>
+      </div>
+    </div>
+
+    <div id="death-modal">
+      <div class="death-title">GAME OVER</div>
+      <div>Survived: <span id="final-time">0.0</span>s</div>
+      <div>Best: <span id="final-best">0.0</span>s</div>
+      <button class="retry-btn" id="retry-button">TRY AGAIN</button>
+    </div>
+
+    <script type="module" src="/src/desktop.js"></script>
+  </body>
+</html>

@@ -3,3 +3,5 @@ packages/.DS_Store
 .DS_Store
 /packages/game/node_modules
 /node_modules
+packages/game/.env
+packages/ai-server/.env
