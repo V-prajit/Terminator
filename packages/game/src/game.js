@@ -92,6 +92,9 @@ class MainScene extends Phaser.Scene {
     this.graceUntil = 0;
     this.invulnUntil = 0;
     this.firstPostGrace = true;
+
+    // Touch tracking
+    this.touchStart = { x: 0, y: 0, t: 0 };
   }
 
   preload() {
@@ -171,6 +174,60 @@ class MainScene extends Phaser.Scene {
     this.input.keyboard.preventDefault = true;
     this.game.canvas.setAttribute("tabindex", "0");
     this.game.canvas.focus();
+
+    // --- Touch input (swipe & tap) ---
+    // Allow multi-pointer on mobile (a couple extra just in case)
+    this.input.addPointer(2);
+
+    // Avoid page scroll/zoom gestures interfering with gameplay
+    if (this.game.canvas && this.game.canvas.style) {
+      this.game.canvas.style.touchAction = "none";
+    }
+
+    // Track touch start
+    this.input.on("pointerdown", (p) => {
+      if (p.primaryDown) {
+        this.touchStart.x = p.x;
+        this.touchStart.y = p.y;
+        this.touchStart.t = this.time.now;
+      }
+    });
+
+    // On release, decide swipe vs tap
+    this.input.on("pointerup", (p) => {
+      const dt = this.time.now - this.touchStart.t;
+      const dx = p.x - this.touchStart.x;
+      const dy = p.y - this.touchStart.y;
+
+      const SWIPE_MIN_DIST = 40;   // px
+      const SWIPE_MAX_TIME = 450;  // ms
+      const TAP_MAX_DIST   = 12;   // px
+      const TAP_MAX_TIME   = 220;  // ms
+
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      // Horizontal swipe
+      if (dt <= SWIPE_MAX_TIME && absX >= SWIPE_MIN_DIST && absX > absY) {
+        if (dx < 0) this.setLane(this.currentLane - 1);
+        else this.setLane(this.currentLane + 1);
+        return;
+      }
+
+      // Tap -> jump to nearest lane (if inside arena rect)
+      if (dt <= TAP_MAX_TIME && absX <= TAP_MAX_DIST && absY <= TAP_MAX_DIST) {
+        if (p.x >= this.arenaLeft && p.x <= this.arenaRight) {
+          // Find nearest lane by x
+          let bestI = 0, bestD = Infinity;
+          this.lanes.forEach((v, i) => {
+            const d = Math.abs(v.x - p.x);
+            if (d < bestD) { bestD = d; bestI = i; }
+          });
+          this.setLane(bestI);
+        }
+      }
+    });
+    // --- End touch input ---
 
     // Start timing/UI
     this.survivalStart = this.time.now;
