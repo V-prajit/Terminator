@@ -73,8 +73,11 @@ let touchStart = null;
 function sizeCanvasToContainer() {
   const container = canvas.parentElement || document.body;
   const rect = container.getBoundingClientRect();
-  const cssW = Math.max(1, Math.floor(rect.width));
-  const cssH = Math.max(1, Math.floor(rect.height));
+
+  // Simple approach - use window dimensions on iOS Safari
+  const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const cssW = isIOSSafari ? window.innerWidth : Math.max(1, Math.floor(rect.width));
+  const cssH = isIOSSafari ? window.innerHeight : Math.max(1, Math.floor(rect.height));
 
   // CSS size (logical points)
   canvas.style.width  = cssW + 'px';
@@ -231,6 +234,13 @@ async function initGame() {
   setupTouchControls();
   unlockAudioOnce();
 
+  // Initialize game with sprites
+  try {
+    await game.init?.();
+  } catch (error) {
+    console.error('Failed to initialize game sprites:', error);
+  }
+
   game.start?.();
   game.__started = true;
 }
@@ -247,8 +257,23 @@ function boot() {
   sizeCanvasToContainer();
   setTimeout(debugCanvas, 50);
 
+  // iOS Safari viewport fix - trigger resize on first meaningful interaction
+  let hasResized = false;
+  const triggerResize = () => {
+    if (!hasResized) {
+      hasResized = true;
+      setTimeout(sizeCanvasToContainer, 50);
+      setTimeout(sizeCanvasToContainer, 200);
+    }
+  };
+
   window.addEventListener('resize',           () => setTimeout(sizeCanvasToContainer, 50),  { passive: true });
   window.addEventListener('orientationchange',() => setTimeout(sizeCanvasToContainer, 100), { passive: true });
+
+  // Trigger resize on user interaction (fixes Safari zoom issue)
+  ['touchstart', 'touchend', 'scroll', 'focus'].forEach(evt => {
+    window.addEventListener(evt, triggerResize, { once: true, passive: true });
+  });
 
   installErrorOverlay();
   hookReadyBar();
