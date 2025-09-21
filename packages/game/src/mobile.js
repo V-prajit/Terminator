@@ -313,8 +313,12 @@ async function initGame() {
       document.getElementById('survival-time').textContent = data.time.toFixed(1) + 's';
       document.getElementById('best-time').textContent     = data.best.toFixed(1) + 's';
 
+      console.log('[Mobile] 🎮 onUpdate called - time:', data.time, 'multiplayer:', multiplayerClient?.isInMultiplayerMode());
+
       // Send periodic updates to multiplayer including full game state
       if (multiplayerClient?.isInMultiplayerMode()) {
+        console.log('[Mobile] 📊 In multiplayer mode, sending updates...');
+
         // Basic stats update
         multiplayerClient.sendPlayerUpdate({
           time: data.time,
@@ -325,20 +329,26 @@ async function initGame() {
 
         // Full game state for real-time mirroring
         if (game.state) {
-          multiplayerClient.sendGameState({
+          const gameStateData = {
             playerPosition: {
-              x: game.state.playerX || 0,
-              y: game.state.playerY || 0,
+              x: game.getLaneX(game.state.playerLane),
+              y: game.getLaneY(),
               lane: game.state.playerLane || 2
             },
             bullets: game.state.bullets || [],
-            enemies: game.state.enemies || [],
             gameTime: data.time,
             score: data.best,
             ammo: data.ammo,
             phase: game.state.phase || 'beginner'
-          });
+          };
+
+          console.log('[Mobile] 🚀 Sending game state with', gameStateData.bullets.length, 'bullets, player at lane', gameStateData.playerPosition.lane);
+          multiplayerClient.sendGameState(gameStateData);
+        } else {
+          console.warn('[Mobile] ❌ No game.state available for streaming');
         }
+      } else {
+        console.log('[Mobile] ❌ Not in multiplayer mode, skipping game state');
       }
     }
   });

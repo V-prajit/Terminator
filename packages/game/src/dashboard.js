@@ -162,7 +162,7 @@ class DashboardController {
   constructor() {
     this.animator = new DashboardAnimator();
     this.players = new Map();
-    this.roomId = this.generateRoomId();
+    this.roomId = this.getRoomIdFromURL() || this.generateRoomId();
     this.websocket = null;
     this.isConnected = false;
     this.qrGenerator = new QRGenerator();
@@ -171,6 +171,16 @@ class DashboardController {
     this.aiDecisions = [];
 
     this.init();
+  }
+
+  getRoomIdFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    if (roomParam) {
+      console.log('Using room ID from URL:', roomParam);
+      return roomParam.toUpperCase();
+    }
+    return null;
   }
 
   generateRoomId() {
@@ -228,8 +238,8 @@ class DashboardController {
         this.isConnected = true;
         this.updateConnectionStatus('Connected', true);
 
-        // Join as dashboard
-        this.sendMessage('join_as_dashboard', {});
+        // Join as dashboard with our generated room ID
+        this.sendMessage('join_as_dashboard', { roomId: this.roomId });
       };
 
       this.websocket.onmessage = (event) => {
@@ -239,12 +249,14 @@ class DashboardController {
       this.websocket.onclose = (event) => {
         console.log('WebSocket disconnected:', event.code, event.reason);
         this.isConnected = false;
-        this.updateConnectionStatus('Disconnected', false);
+        this.updateConnectionStatus('Reconnecting...', false);
 
-        // Attempt to reconnect after 3 seconds
+        // Attempt to reconnect immediately for ngrok issues, then with backoff
+        const reconnectDelay = event.code === 1006 ? 1000 : 3000;
         setTimeout(() => {
+          console.log(`Attempting to reconnect WebSocket after ${reconnectDelay}ms...`);
           this.setupWebSocket();
-        }, 3000);
+        }, reconnectDelay);
       };
 
       this.websocket.onerror = (error) => {
@@ -271,6 +283,8 @@ class DashboardController {
       const message = JSON.parse(event.data);
       const { type, data } = message;
 
+      console.log('[Dashboard] 📨 WebSocket message received:', type, data);
+
       switch (type) {
         case 'welcome':
           console.log('Welcome message received:', data);
@@ -278,8 +292,12 @@ class DashboardController {
 
         case 'dashboard_ready':
           console.log('Dashboard ready:', data);
-          this.roomId = data.roomId;
-          this.updateRoomId(data.roomId);
+          // Server should now use our room ID, but verify it matches
+          if (data.roomId !== this.roomId) {
+            console.warn(`Room ID mismatch! Expected: ${this.roomId}, Got: ${data.roomId}`);
+            this.roomId = data.roomId;
+            this.updateRoomId(data.roomId);
+          }
           this.updateQRCode();
           break;
 
@@ -429,10 +447,11 @@ class DashboardController {
             this.renderBullets(gameState.bullets);
           }
 
-          // Render enemies
-          if (gameState.enemies && gameState.enemies.length > 0) {
-            this.renderEnemies(gameState.enemies);
-          }
+          // Show game stats
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = '12px monospace';
+          this.ctx.fillText(`Time: ${gameState.gameTime?.toFixed(1) || 0}s`, 10, 20);
+          this.ctx.fillText(`Lane: ${gameState.playerPosition?.lane || 'N/A'}`, 10, 35);
         },
 
         renderLanes: function() {
@@ -461,16 +480,15 @@ class DashboardController {
           this.ctx.fillStyle = '#ff0040';
           bullets.forEach(bullet => {
             if (bullet.x !== undefined && bullet.y !== undefined) {
-              this.ctx.fillRect(bullet.x - 3, bullet.y - 3, 6, 6);
-            }
-          });
-        },
+              // Use the actual coordinates from the mobile game
+              // Scale them proportionally to the dashboard canvas
+              const scaleX = canvas.width / 400;   // Mobile game canvas width
+              const scaleY = canvas.height / 600;  // Mobile game canvas height
 
-        renderEnemies: function(enemies) {
-          this.ctx.fillStyle = '#ffaa00';
-          enemies.forEach(enemy => {
-            if (enemy.x !== undefined && enemy.y !== undefined) {
-              this.ctx.fillRect(enemy.x - 10, enemy.y - 10, 20, 20);
+              const x = bullet.x * scaleX;
+              const y = bullet.y * scaleY;
+
+              this.ctx.fillRect(x - 3, y - 3, 6, 6);
             }
           });
         }
@@ -515,6 +533,9 @@ class DashboardController {
     if (roomIdElement) {
       roomIdElement.textContent = `ROOM: ${newRoomId}`;
     }
+
+    // Update QR code with new room ID
+    this.updateQRCode();
   }
 
   onPlayerLeave(playerId) {
@@ -595,6 +616,8 @@ class DashboardController {
   }
 
   onGameStateUpdate(data) {
+    console.log('[Dashboard] 🎮 Game state update received:', data);
+
     // Find which player slot this game state belongs to
     let playerSlot = null;
     this.players.forEach((player, slot) => {
@@ -603,9 +626,15 @@ class DashboardController {
       }
     });
 
+    console.log('[Dashboard] 🎯 Found player slot:', playerSlot, 'for player:', data.playerId);
+
     if (playerSlot) {
       const player = this.players.get(playerSlot);
+      console.log('[Dashboard] 🎬 Player object:', player);
+
       if (player && player.spectatorRenderer) {
+        console.log('[Dashboard] 🚀 Rendering game state to canvas:', data.gameState);
+
         // Update the spectator renderer with the new game state
         player.spectatorRenderer.render(data.gameState);
 
@@ -616,7 +645,21 @@ class DashboardController {
           lane: data.gameState.playerPosition?.lane || 2,
           ammo: data.gameState.ammo || 0
         });
+      } else {
+        console.warn('[Dashboard] ❌ No spectator renderer found for player:', playerSlot);
       }
+    } else {
+      console.warn('[Dashboard] ❌ No player slot found for player ID:', data.playerId);
+      console.log('[Dashboard] 📊 Current players:', Array.from(this.players.entries()));
+
+      // Fallback: Auto-create player slot for this player ID
+      console.log('[Dashboard] 🔧 Auto-creating player slot for:', data.playerId);
+      this.onPlayerJoin(data.playerId);
+
+      // Try rendering again after creating the slot
+      setTimeout(() => {
+        this.onGameStateUpdate(data);
+      }, 100);
     }
   }
 
@@ -653,7 +696,7 @@ class DashboardController {
   }
 
   onPlayerJoin(playerId) {
-    console.log(`Player ${playerId} joining...`);
+    console.log(`Player ${playerId} joining room ${this.roomId}`);
 
     // Check if this player is already connected (reconnection case)
     let existingSlot = null;
@@ -667,7 +710,6 @@ class DashboardController {
     if (existingSlot) {
       // Player is reconnecting to their existing slot
       playerSlot = existingSlot;
-      console.log(`Player ${playerId} reconnecting to slot ${playerSlot}`);
     } else {
       // New player - find available slot
       playerSlot = this.getAvailablePlayerSlot();
@@ -690,10 +732,6 @@ class DashboardController {
       if (player) {
         player.connected = true;
         player.actualPlayerId = playerId; // Store the actual player ID
-
-        // For spectator mode, we don't need to init/start a game
-        // The spectator renderer will display received game states
-        console.log(`Spectator renderer ready for ${playerSlot}`);
 
         this.updatePlayerConnection(playerSlot, true);
 

@@ -274,13 +274,20 @@ export class MultiplayerClient {
   }
 
   sendGameState(gameStateData) {
-    if (!this.isConnected || !this.isMultiplayer) return;
+    if (!this.isConnected || !this.isMultiplayer) {
+      console.log('[MultiplayerClient] ❌ Cannot send game state - not connected or not in multiplayer');
+      return;
+    }
 
-    this.sendMessage('game_state', {
+    const payload = {
       ...gameStateData,
       playerId: this.playerId,
       timestamp: Date.now()
-    });
+    };
+
+    console.log('[MultiplayerClient] 📤 Sending game state:', payload);
+    const success = this.sendMessage('game_state', payload);
+    console.log('[MultiplayerClient] 📤 Send result:', success);
   }
 
   disconnect() {

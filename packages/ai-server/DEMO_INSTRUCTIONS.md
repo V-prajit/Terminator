@@ -1,8 +1,9 @@
 # 🎮 AI Overlord Multiplayer Demo - Quick Reference
 
 ## 🎯 Demo URLs
-- **Dashboard (Laptop)**: https://2ef3a1521027.ngrok-free.app/dashboard.html
-- **Mobile Game**: https://2ef3a1521027.ngrok-free.app/mobile.html
+- **Dashboard (Laptop)**: https://4d1d43c7a654.ngrok-free.app/dashboard.html
+- **Mobile Game**: https://4d1d43c7a654.ngrok-free.app/mobile.html?room=CIDJC
+- **Room Code**: CIDJC
 
 ## 🎬 Demo Flow (90 seconds)
 1. **0-15s**: Open dashboard, explain single-player AI
@@ -29,4 +30,4 @@
 3. Real-time player coordination
 4. Professional visual effects
 
-Generated: Sat Sep 20 22:30:43 EDT 2025
+Generated: Sun Sep 21 00:19:53 EDT 2025

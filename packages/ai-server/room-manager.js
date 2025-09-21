@@ -63,8 +63,8 @@ export class Room extends EventEmitter {
       this.status = 'waiting';
     }
 
-    // Notify all players about the new join
-    this.broadcastToPlayers('player_joined', {
+    // Notify all players and spectators about the new join
+    this.broadcastToAll('player_joined', {
       playerId,
       playerCount: this.players.size,
       roomStatus: this.status,
@@ -92,8 +92,8 @@ export class Room extends EventEmitter {
       this.gameState.started = false;
     }
 
-    // Notify remaining players
-    this.broadcastToPlayers('player_left', {
+    // Notify remaining players and spectators
+    this.broadcastToAll('player_left', {
       playerId,
       playerCount: this.players.size,
       roomStatus: this.status
@@ -317,7 +317,7 @@ export class Room extends EventEmitter {
     this.emit('broadcast', { type, data });
   }
 
-  isExpired(maxIdleTime = 5 * 60 * 1000) { // 5 minutes default
+  isExpired(maxIdleTime = 60 * 60 * 1000) { // 1 hour default - much longer for demo stability
     return Date.now() - this.lastActivity > maxIdleTime;
   }
 
@@ -368,15 +368,24 @@ export class RoomManager extends EventEmitter {
 
     room.on('playerLeft', ({ room, playerId }) => {
       this.playerRooms.delete(playerId);
-      if (room.players.size === 0) {
-        this.deleteRoom(room.id);
-      }
+      // Don't auto-delete rooms - let them persist for dashboard reconnections
+      // They will be cleaned up later by the cleanup process if truly inactive
       this.emit('playerLeft', { room, playerId });
     });
 
     room.on('broadcast', ({ type, data }) => {
+      // Enhanced logging for broadcast debugging
+      const spectatorList = [];
+
       // Forward to spectators watching this room
       this.spectators.forEach((spectatorRoom, websocket) => {
+        spectatorList.push({
+          room: spectatorRoom,
+          readyState: websocket.readyState,
+          matches: spectatorRoom === room.id,
+          willSend: spectatorRoom === room.id && websocket.readyState === 1
+        });
+
         if (spectatorRoom === room.id && websocket.readyState === 1) {
           try {
             websocket.send(JSON.stringify({ type, data, roomId: room.id }));
@@ -386,6 +395,12 @@ export class RoomManager extends EventEmitter {
           }
         }
       });
+
+      console.log(`📡 Broadcast '${type}' to room ${room.id}:`);
+      console.log(`   Spectators: ${spectatorList.length} total, ${spectatorList.filter(s => s.willSend).length} receiving`);
+      if (spectatorList.length > 0) {
+        console.log(`   Details:`, spectatorList);
+      }
     });
 
     console.log(`Created room ${roomId}`);
@@ -397,6 +412,9 @@ export class RoomManager extends EventEmitter {
   deleteRoom(roomId) {
     const room = this.rooms.get(roomId);
     if (!room) return false;
+
+    console.log(`🗑️ [DEBUG] deleteRoom called for ${roomId} - Stack trace:`);
+    console.trace();
 
     // Remove all players
     room.players.forEach((player, playerId) => {

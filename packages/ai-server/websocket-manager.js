@@ -174,6 +174,12 @@ export class WebSocketManager {
     }
 
     try {
+      // Check if room exists, create if it doesn't (for dashboard reconnection scenarios)
+      if (!this.roomManager.getRoom(roomId)) {
+        console.log(`Room ${roomId} not found, creating it for player ${playerId}`);
+        this.roomManager.createRoom(roomId);
+      }
+
       const player = this.roomManager.addPlayerToRoom(playerId, ws, roomId, metadata);
       const room = this.roomManager.getRoomByPlayer(playerId);
 
@@ -206,24 +212,77 @@ export class WebSocketManager {
       let room;
 
       if (roomId) {
-        // Join as spectator for specific room
-        room = this.roomManager.addSpectator(ws, roomId);
-        connection.type = 'spectator';
-        connection.roomId = roomId;
+        // Create room with specific ID for dashboard
+        try {
+          room = this.roomManager.createRoom(roomId);
+          // FIXED: Properly set connection type for new room
+          connection.type = 'dashboard';
+          connection.roomId = room.id;
+          // CRITICAL: Register as spectator to receive broadcasts
+          this.roomManager.spectators.set(ws, room.id);
+          console.log(`Dashboard created new room ${room.id} and registered as spectator`);
+        } catch (error) {
+          if (error.message.includes('already exists')) {
+            // Room exists, join as spectator instead
+            room = this.roomManager.addSpectator(ws, roomId);
+            connection.type = 'spectator';
+            connection.roomId = roomId;
+            console.log(`Dashboard joined existing room ${roomId} as spectator`);
+          } else {
+            throw error;
+          }
+        }
       } else {
         // Create new room for dashboard
         room = this.roomManager.createRoom();
         connection.type = 'dashboard';
         connection.roomId = room.id;
+        // CRITICAL: Register as spectator to receive broadcasts
+        this.roomManager.spectators.set(ws, room.id);
+        console.log(`Dashboard created random room ${room.id} and registered as spectator`);
       }
 
+      // Send comprehensive state synchronization
+      const roomInfo = room.getInfo();
+      const gameState = room.getDualPlayerPayload();
+
+      // CRITICAL: Send full state snapshot to newly connected dashboard
       this.sendMessage(ws, 'dashboard_ready', {
         roomId: room.id,
-        roomInfo: room.getInfo(),
-        gameState: room.getDualPlayerPayload()
+        roomInfo,
+        gameState
       });
 
-      console.log(`Dashboard connected to room ${room.id}`);
+      // If there are existing players, notify dashboard about each one
+      if (room.players.size > 0) {
+        room.players.forEach((player, playerId) => {
+          this.sendMessage(ws, 'player_joined', {
+            playerId,
+            playerCount: room.players.size,
+            roomStatus: room.status,
+            metadata: player.metadata || {}
+          });
+        });
+      }
+
+      // Send recent AI decisions if any exist
+      if (room.gameState.aiDecisions.length > 0) {
+        const recentDecisions = room.gameState.aiDecisions.slice(-5); // Last 5 decisions
+        recentDecisions.forEach(decision => {
+          this.sendMessage(ws, 'ai_decision', decision);
+        });
+      }
+
+      // Send recent agent debates if any exist
+      if (room.gameState.agentDebates.length > 0) {
+        const recentDebates = room.gameState.agentDebates.slice(-3); // Last 3 debates
+        recentDebates.forEach(debate => {
+          this.sendMessage(ws, 'agent_debate', debate);
+        });
+      }
+
+      console.log(`✅ Dashboard connected to room ${room.id} - Type: ${connection.type}`);
+      console.log(`📋 State sync complete - Players: ${room.players.size}, AI Decisions: ${room.gameState.aiDecisions.length}, Debates: ${room.gameState.agentDebates.length}`);
 
     } catch (error) {
       console.error('Error setting up dashboard:', error);
@@ -260,17 +319,34 @@ export class WebSocketManager {
 
   handleGameState(ws, payload) {
     const connection = this.connections.get(ws);
-    if (!connection || connection.type !== 'player') return;
+    if (!connection || connection.type !== 'player') {
+      console.log('[WebSocket] ❌ Invalid connection for game state:', connection?.type || 'no connection');
+      return;
+    }
 
     const room = this.roomManager.getRoom(connection.roomId);
-    if (!room) return;
+    if (!room) {
+      console.log('[WebSocket] ❌ Room not found:', connection.roomId);
+      return;
+    }
+
+    console.log(`[WebSocket] 📤 Broadcasting game state from player: ${connection.playerId} to room: ${connection.roomId}`);
+
+    // Enhanced logging: Show current room state
+    const roomInfo = room.getInfo();
+    const spectatorCount = Array.from(this.roomManager.spectators.values()).filter(roomId => roomId === connection.roomId).length;
+
+    console.log(`[WebSocket] 🏠 Room state - Players: ${roomInfo.playerCount}, Spectators: ${spectatorCount}, Status: ${roomInfo.status}`);
 
     // Broadcast full game state to all spectators (dashboards)
-    room.broadcastToAll('game_state_update', {
+    const broadcastData = {
       playerId: connection.playerId,
       gameState: payload,
       timestamp: Date.now()
-    });
+    };
+
+    console.log('[WebSocket] 📡 Initiating broadcast to all connections in room...');
+    room.broadcastToAll('game_state_update', broadcastData);
   }
 
   handleAIDecisionRelay(ws, payload) {
@@ -395,16 +471,21 @@ export class WebSocketManager {
     const connection = this.connections.get(ws);
     if (!connection) return;
 
-    console.log(`WebSocket connection ${connection.id} disconnected: ${code} ${reason}`);
+    console.log(`WebSocket connection ${connection.id} (${connection.type}) disconnected: ${code} ${reason}`);
 
-    // Clean up based on connection type
+    // Clean up based on connection type - but DON'T remove players immediately
+    // for demo stability (handle temporary disconnections gracefully)
     if (connection.type === 'player' && connection.playerId) {
-      const room = this.roomManager.getRoomByPlayer(connection.playerId);
-      if (room) {
-        room.removePlayer(connection.playerId);
-      }
-    } else if (connection.type === 'spectator') {
+      console.log(`Player ${connection.playerId} disconnected from room ${connection.roomId} - keeping room alive for reconnection`);
+      // Don't immediately remove player - allow reconnection
+      // const room = this.roomManager.getRoomByPlayer(connection.playerId);
+      // if (room) {
+      //   room.removePlayer(connection.playerId);
+      // }
+    } else if (connection.type === 'spectator' || connection.type === 'dashboard') {
+      // FIXED: Clean up both spectator and dashboard connections from spectators map
       this.roomManager.removeSpectator(ws);
+      console.log(`${connection.type} removed from room ${connection.roomId}`);
     }
 
     this.connections.delete(ws);

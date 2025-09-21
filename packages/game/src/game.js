@@ -864,6 +864,13 @@ export class OverlordGame {
   update() {
     if (this.state.dead || this.state.won) return;
 
+    // Debug: Log every 60 frames (about 1 second)
+    if (!this._frameCount) this._frameCount = 0;
+    this._frameCount++;
+    if (this._frameCount % 60 === 0) {
+      console.log('[Game] 🎮 Update loop running - frame:', this._frameCount, 'dead:', this.state.dead, 'won:', this.state.won);
+    }
+
     const now = Date.now();
     const dt = (now - this.lastTickTime) / 1000;
     this.lastTickTime = now;
@@ -954,6 +961,11 @@ export class OverlordGame {
       // Remove off-screen bullets
       return bullet.y > -50;
     });
+
+    // Debug: Log onUpdate callback every 60 frames
+    if (this._frameCount % 60 === 0) {
+      console.log('[Game] 📤 Calling onUpdate callback - time:', this.state.survivalTime, 'bullets:', this.state.bullets.length);
+    }
 
     this.callbacks.onUpdate({
       time: this.state.survivalTime,
