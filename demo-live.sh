@@ -1,11 +1,13 @@
 #!/bin/bash
-# demo-live.sh - One-click AI Overlord demo for PennHacks judges
+# demo-live.sh - One-click AI Overlord MULTIPLAYER demo for PennHacks judges
 # Run this script to start everything and get QR codes for judges
 
 set -e
 
-echo "🚀 Starting AI Overlord Demo for PennHacks..."
-echo "================================================"
+echo "🎮 Starting AI Overlord MULTIPLAYER Demo for PennHacks..."
+echo "=========================================================="
+echo "✨ Features: Dynamic Dashboard + Real-time Multiplayer + AI Coordination"
+echo "=========================================================="
 
 # Colors for terminal output
 RED='\033[0;31m'
@@ -54,6 +56,14 @@ else
     exit 1
 fi
 
+# Test WebSocket stats endpoint
+echo -e "${CYAN}🔌 Testing WebSocket multiplayer system...${NC}"
+if curl -s http://localhost:8787/ws-stats > /dev/null; then
+    echo -e "${GREEN}✅ WebSocket multiplayer system ready${NC}"
+else
+    echo -e "${YELLOW}⚠️  WebSocket stats not available (may still work)${NC}"
+fi
+
 # Start ngrok tunnel
 echo -e "${CYAN}🌍 Creating ngrok tunnel...${NC}"
 nohup ngrok http 3000 --log=stdout > ngrok.log 2>&1 &
@@ -83,7 +93,8 @@ if [ -z "$NGROK_URL" ]; then
     exit 1
 fi
 
-GAME_URL="${NGROK_URL}/mobile.html"
+DASHBOARD_URL="${NGROK_URL}/dashboard.html"
+MOBILE_URL="${NGROK_URL}/mobile.html"
 
 echo -e "${GREEN}✅ Ngrok tunnel created: $NGROK_URL${NC}"
 
@@ -97,46 +108,95 @@ if ! command -v qrencode &> /dev/null; then
     fi
 fi
 
-# Generate QR code image
-echo -e "${CYAN}📱 Generating QR code...${NC}"
-curl -s "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=$GAME_URL" -o demo-qr.png
-echo -e "${GREEN}✅ QR code saved as demo-qr.png${NC}"
+# Generate QR code image for mobile joining only
+echo -e "${CYAN}📱 Generating mobile QR code...${NC}"
+curl -s "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=$MOBILE_URL" -o mobile-qr.png
+echo -e "${GREEN}✅ Mobile QR code saved as mobile-qr.png${NC}"
 
-# Open QR code image
-open demo-qr.png &
+# Open mobile QR code image
+open mobile-qr.png &
 
-# Display terminal QR code if available
+# Display terminal QR code for mobile
 if command -v qrencode &> /dev/null; then
-    echo -e "\n${PURPLE}📱 SCAN THIS QR CODE:${NC}"
-    echo "===================="
-    qrencode -t ANSI256 "$GAME_URL"
-    echo "===================="
+    echo -e "\n${CYAN}📱 SCAN FOR MOBILE PLAY:${NC}"
+    echo "========================"
+    qrencode -t ANSI256 "$MOBILE_URL"
+    echo "========================"
 fi
 
 # Display all the info
-echo -e "\n${GREEN}🎉 AI OVERLORD DEMO IS LIVE!${NC}"
-echo "=============================================="
-echo -e "${YELLOW}📱 MOBILE GAME URL:${NC} $GAME_URL"
+echo -e "\n${GREEN}🎉 AI OVERLORD MULTIPLAYER DEMO IS LIVE!${NC}"
+echo "=================================================="
+echo -e "${YELLOW}🎮 DASHBOARD URL (LAPTOP):${NC} $DASHBOARD_URL"
+echo -e "${YELLOW}📱 MOBILE GAME URL:${NC} $MOBILE_URL"
 echo -e "${YELLOW}🌐 NGROK DASHBOARD:${NC} http://localhost:4040"
 echo -e "${YELLOW}🤖 AI SERVER:${NC} http://localhost:8787"
 echo -e "${YELLOW}🎮 DEMO SERVER:${NC} http://localhost:3000"
 echo ""
-echo -e "${CYAN}📋 FOR JUDGES:${NC}"
-echo "1. Scan the QR code that just opened"
-echo "2. Or visit: $GAME_URL"
-echo "3. Tap to start, swipe to dodge!"
+echo -e "${CYAN}🎬 DEMO FLOW FOR JUDGES:${NC}"
+echo "1. Copy/paste dashboard URL to laptop browser: $DASHBOARD_URL"
+echo "2. Show single-player mode with AI agent debate"
+echo "3. Have mobile player 1 scan QR CODE FROM DASHBOARD SCREEN"
+echo "4. Have mobile player 2 scan SAME QR FROM DASHBOARD SCREEN"
+echo "5. 🎯 WATCH SMOOTH TRANSITION TO DUAL-PLAYER!"
+echo "6. Show live AI coordination between players"
 echo ""
-echo -e "${PURPLE}🎯 DEMO PITCH:${NC}"
-echo '"Scan this QR code to try our AI Overlord game!"'
-echo '"The AI analyzes your movement patterns and predicts"'
-echo '"where you'\''ll dodge next using Cerebras for ultra-fast inference!"'
+echo -e "${PURPLE}🎯 ENHANCED DEMO PITCH:${NC}"
+echo '"Watch this dashboard transform in real-time!"'
+echo '"When the second player joins, see our dynamic"'
+echo '"multiplayer system with live AI coordination!"'
+echo '"The AI analyzes BOTH players simultaneously"'
+echo '"using Cerebras for ultra-fast dual-player decisions!"'
 echo ""
 echo -e "${YELLOW}💡 LOGS:${NC}"
 echo "AI Server: tail -f packages/ai-server/ai-server.log"
 echo "Demo Server: tail -f packages/ai-server/demo-server.log"
 echo "Ngrok: tail -f packages/ai-server/ngrok.log"
 echo ""
+echo -e "${YELLOW}🎮 DEMO CONTROLS (On Dashboard):${NC}"
+echo "F1 - Toggle demo visual effects"
+echo "F2 - Force trigger dual-player transition"
+echo "F3 - Reset to single-player mode"
+echo ""
 echo -e "${RED}🛑 TO STOP:${NC} Press Ctrl+C or run: pkill -f 'node|ngrok'"
+
+# Create quick reference file
+cat > DEMO_INSTRUCTIONS.md << EOF
+# 🎮 AI Overlord Multiplayer Demo - Quick Reference
+
+## 🎯 Demo URLs
+- **Dashboard (Laptop)**: $DASHBOARD_URL
+- **Mobile Game**: $MOBILE_URL
+
+## 🎬 Demo Flow (90 seconds)
+1. **0-15s**: Open dashboard, explain single-player AI
+2. **15-30s**: Player 1 scans QR, joins game
+3. **30-45s**: Player 2 scans QR → **SMOOTH TRANSITION!**
+4. **45-75s**: Show dual-player AI coordination
+5. **75-90s**: Highlight technical achievements
+
+## 🎮 Dashboard Controls
+- **F1** - Toggle demo visual effects
+- **F2** - Force trigger transition (for testing)
+- **F3** - Reset to single-player mode
+
+## 🎯 Key Demo Points
+- Dynamic layout that adapts in real-time
+- AI analyzes both players simultaneously
+- WebSocket coordination under 100ms
+- Professional animations and visual polish
+- Cross-player pattern detection
+
+## 🔥 Wow Moments
+1. Smooth 2.5-second transition animation
+2. Live AI agent debate feed
+3. Real-time player coordination
+4. Professional visual effects
+
+Generated: $(date)
+EOF
+
+echo -e "${GREEN}📝 Created DEMO_INSTRUCTIONS.md for quick reference${NC}"
 
 # Save PIDs for cleanup
 echo "$AI_PID" > .demo-pids
@@ -177,5 +237,5 @@ while true; do
     fi
 
     # Show timestamp
-    echo "$(date '+%H:%M:%S') - Services running... (URL: $GAME_URL)"
+    echo "$(date '+%H:%M:%S') - Services running... 🎮 Dashboard: $DASHBOARD_URL | 📱 Mobile: $MOBILE_URL"
 done

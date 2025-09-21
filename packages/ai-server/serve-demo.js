@@ -36,14 +36,24 @@ const aiProxy = createProxyMiddleware({
   },
 });
 
+// WebSocket proxy for multiplayer
+const wsProxy = createProxyMiddleware({
+  target: AI_TARGET,
+  changeOrigin: true,
+  ws: true,
+  logLevel: 'debug'
+});
+
 // Explicit routes (cover common methods)
 app.get("/health", aiProxy);
 app.get("/ratelimit", aiProxy);
+app.get("/ws-stats", aiProxy);
 app.post("/decide", aiProxy);
+app.post("/decide-multiplayer", aiProxy);
 app.post("/taunt", aiProxy);
 
 // Also catch any other method variants under these paths
-app.use(["/decide", "/health", "/ratelimit", "/taunt"], aiProxy);
+app.use(["/decide", "/health", "/ratelimit", "/taunt", "/ws-stats"], aiProxy);
 
 // 2) Tiny health for THIS server
 app.get("/_demohealth", (_req, res) => {
@@ -59,8 +69,10 @@ app.use(
   })
 );
 
-// 4) Convenience redirect for "/"
-app.get("/", (_req, res) => res.redirect(302, "/mobile.html"));
+// 4) Convenience redirects
+app.get("/", (_req, res) => res.redirect(302, "/dashboard.html"));
+app.get("/mobile", (_req, res) => res.redirect(302, "/mobile.html"));
+app.get("/dashboard", (_req, res) => res.redirect(302, "/dashboard.html"));
 
 // 5) Helpful 404
 app.use((req, res) => {
@@ -69,14 +81,16 @@ app.use((req, res) => {
     .send(`Not found: ${req.method} ${req.url}\nTry /mobile.html or /desktop.html`);
 });
 
-// ─────────────── HTTP + WS (spectator scaffold) ───────────────
+// ─────────────── HTTP + WS (multiplayer support) ───────────────
 const server = createServer(app);
 
-// Minimal WS on /ws (unused for mobile-only; ready for spectator later)
-const wss = new WebSocketServer({ server, path: "/ws" });
-wss.on("connection", (ws) => {
-  try { ws.send(JSON.stringify({ type: "hello", ver: 1, t: Date.now() })); } catch {}
-  ws.on("error", (e) => console.warn("ws error:", e.message));
+// Proxy WebSocket connections to AI server
+server.on('upgrade', (request, socket, head) => {
+  if (request.url.startsWith('/ws')) {
+    wsProxy.upgrade(request, socket, head);
+  } else {
+    socket.destroy();
+  }
 });
 
 // ─────────────── Start ───────────────
@@ -86,9 +100,17 @@ server.listen(PORT, "0.0.0.0", () => {
     .filter((i) => i && i.family === "IPv4" && !i.internal)
     .map((i) => i.address);
 
-  console.log("✅ serve-demo up");
-  console.log(`  http://localhost:${PORT}`);
-  addrs.forEach((a) => console.log(`  http://${a}:${PORT}`));
-  console.log("Static root:", STATIC_ROOT);
-  console.log("Proxying →", AI_TARGET, "for /decide,/health,/ratelimit,/taunt");
+  console.log("🎮 AI Overlord Demo Server with Multiplayer");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(`📱 Dashboard: http://localhost:${PORT}/dashboard.html`);
+  console.log(`📱 Mobile:    http://localhost:${PORT}/mobile.html`);
+  addrs.forEach((a) => console.log(`📱 Network:   http://${a}:${PORT}/dashboard.html`));
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("🔧 Static root:", STATIC_ROOT);
+  console.log("🔧 Proxying →", AI_TARGET, "for API + WebSocket");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("🎯 DEMO READY:");
+  console.log("   1. Open dashboard on laptop");
+  console.log("   2. Scan QR or use mobile URL");
+  console.log("   3. Watch smooth transition!");
 });

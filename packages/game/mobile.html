@@ -126,6 +126,44 @@
         border-radius: 5px;
         font-family: inherit;
       }
+      #win-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.95);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+      #win-modal.show {
+        display: flex;
+      }
+      .win-title {
+        font-size: 36px;
+        color: #00ff00;
+        margin-bottom: 20px;
+        text-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+      }
+      .play-again-btn {
+        padding: 20px 40px;
+        font-size: 24px;
+        background: #00ff00;
+        color: #000;
+        border: none;
+        border-radius: 5px;
+        font-family: inherit;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+      }
+      .play-again-btn:hover {
+        background: #22ff22;
+        box-shadow: 0 0 25px rgba(0, 255, 0, 0.5);
+      }
     </style>
   </head>
   <body>
@@ -148,6 +186,13 @@
       <div>Survived: <span id="final-time">0.0</span>s</div>
       <div>Best: <span id="final-best">0.0</span>s</div>
       <button class="retry-btn" id="retry-button">RETRY</button>
+    </div>
+
+    <div id="win-modal">
+      <div class="win-title">🎉 VICTORY! 🎉</div>
+      <div>Survival Time: <span id="win-time">0.0</span>s</div>
+      <div>Best Record: <span id="win-best">0.0</span>s</div>
+      <button class="play-again-btn" id="play-again-button">PLAY AGAIN</button>
     </div>
 
     <script type="module" src="/src/mobile.js"></script>

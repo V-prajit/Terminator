@@ -1,7 +1,8 @@
-// server.js (ESM) — with dotenv + API key sanitizing + gpt-oss-120b
+// server.js (ESM) — with dotenv + API key sanitizing + gpt-oss-120b + multiplayer WebSocket support
 import "dotenv/config";            // <-- loads .env automatically
 import http from "http";
 import express from "express";
+import WebSocketManager from "./websocket-manager.js";
 
 // ─────────── Config ───────────
 const PORT = process.env.PORT || 8787;
@@ -36,6 +37,17 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
+
+// Serve static files from the game directory
+import path from "path";
+import { fileURLToPath } from "url";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const gameDir = path.join(__dirname, "../game");
+
+app.use(express.static(gameDir, {
+  extensions: ['html'],
+  index: false
+}));
 
 // ─────────── Local token bucket ───────────
 let bucket = { capacity: TOKENS_PER_MINUTE, tokens: TOKENS_PER_MINUTE, lastRefill: Date.now() };
@@ -360,21 +372,197 @@ app.post('/taunt', (req, res) => {
   res.json({ message: lines[Math.floor(Math.random()*lines.length)] });
 });
 
+// ─────────── Dual-Player AI Functions ───────────
+function buildDualPlayerMessages(dualPlayerPayload) {
+  const { player1, player2, cross_patterns, game_state } = dualPlayerPayload;
+
+  // Analyze cross-player patterns
+  let patternAnalysis = "No significant cross-player patterns detected yet.";
+  if (cross_patterns.inverse_movement?.confidence > 0.5) {
+    patternAnalysis = `CRITICAL: Players show inverse movement pattern (${(cross_patterns.inverse_movement.correlation * 100).toFixed(0)}% correlation). When P1 goes left, P2 goes right.`;
+  } else if (cross_patterns.mirror_movement?.confidence > 0.5) {
+    patternAnalysis = `Players show mirror movement pattern (${(cross_patterns.mirror_movement.correlation * 100).toFixed(0)}% correlation). They move in same direction.`;
+  }
+
+  // Determine coordination strategy
+  const survivalTime = game_state.duration / 1000;
+  let bulletConstraint = "";
+  if (survivalTime < 5) {
+    bulletConstraint = "BEGINNER phase: Use count=1 only for each player. Simple targeting.";
+  } else if (survivalTime < 20) {
+    bulletConstraint = "INTERMEDIATE phase: Use count=1-2 per player. May coordinate attacks.";
+  } else {
+    bulletConstraint = "EXPERT phase: Use count=1-3 per player. Full tactical coordination available.";
+  }
+
+  const system = [
+    "You are the DUAL-PLAYER Overlord Decision Engine coordinating attacks against TWO players simultaneously.",
+    `PLAYER ANALYSIS:`,
+    `- Player 1: Lane ${player1.current_lane}, Recent: [${player1.recent_lanes.slice(-5).join(',')}]`,
+    `- Player 2: Lane ${player2.current_lane}, Recent: [${player2.recent_lanes.slice(-5).join(',')}]`,
+    `CROSS-PLAYER PATTERNS: ${patternAnalysis}`,
+    bulletConstraint,
+    "COORDINATION STRATEGY:",
+    "- Analyze BOTH players' patterns to predict coordinated movement",
+    "- If players show inverse patterns, target their predicted opposite positions",
+    "- If players mirror each other, use flanking attacks",
+    "- Consider one player's position when targeting the other",
+    "REQUIRED OUTPUT FORMAT:",
+    '{"decision": "spawn_bullets", "params": {"count": N, "lanes": [lane1, lane2, ...], "dirs": [0,0,...], "speed": 1.0}, "explain": "dual-player strategy reasoning"}',
+    '- lanes array contains ALL target lanes for BOTH players',
+    '- count must match lanes array length',
+    "EXAMPLE: P1 in lane 1, P2 in lane 3, inverse pattern detected:",
+    '{"decision": "spawn_bullets", "params": {"count": 3, "lanes": [0, 2, 4], "dirs": [0,0,0], "speed": 1.0}, "explain": "Coordinated flanking: targeting P1 predicted left move and P2 predicted right move with center coverage"}',
+    "Return ONLY compact JSON. Coordinate attacks intelligently across both players.",
+  ].join("\n");
+
+  const user = JSON.stringify({
+    dual_player_context: dualPlayerPayload,
+    tick: game_state.tick,
+    coordination_request: "Generate coordinated attack considering both players' patterns"
+  });
+
+  return [
+    { role: "system", content: system },
+    { role: "user", content: "Coordinate dual-player attack based on this context:\n" + user },
+  ];
+}
+
+function generateAgentDebate(room, dualPlayerPayload, aiDecision) {
+  const { player1, player2, cross_patterns } = dualPlayerPayload;
+
+  // Generate Strategist analysis
+  const strategistObservations = [
+    `Player 1 in lane ${player1.current_lane}, Player 2 in lane ${player2.current_lane}`,
+    cross_patterns.inverse_movement?.confidence > 0.5
+      ? `Inverse movement correlation detected: ${(cross_patterns.inverse_movement.correlation * 100).toFixed(0)}%`
+      : cross_patterns.mirror_movement?.confidence > 0.5
+      ? `Mirror movement correlation detected: ${(cross_patterns.mirror_movement.correlation * 100).toFixed(0)}%`
+      : "Analyzing movement patterns between players",
+    `Coordinated ${aiDecision.params?.count || 1}-lane attack targeting: [${(aiDecision.params?.lanes || []).join(', ')}]`
+  ];
+
+  const strategistMessage = "🎯 Pattern Analysis: " + strategistObservations.join(". ") + ". Optimal coordination achieved.";
+
+  // Generate Aggressive response
+  const aggressiveResponses = [
+    "⚡ EXCELLENT! Overwhelming force across multiple lanes. No escape for either player!",
+    "⚡ DUAL PRESSURE! Both players will crack under coordinated assault. Maintain aggression!",
+    "⚡ PERFECT TIMING! Simultaneous targeting exploits their movement correlation. Strike now!",
+    "⚡ RELENTLESS PURSUIT! Cross-player coordination allows maximum battlefield control!"
+  ];
+
+  const aggressiveMessage = aggressiveResponses[Math.floor(Math.random() * aggressiveResponses.length)];
+
+  // Add to room's agent debate
+  room.addAgentDebate(strategistMessage, aggressiveMessage);
+}
+
 // ─────────── Boot ───────────
-http.createServer(app).listen(PORT, '0.0.0.0', () => {
-  log("🤖 AI Overlord Server");
-  log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  log("Mode:", "LIVE");
+const server = http.createServer(app);
+
+// Initialize WebSocket manager
+const wsManager = new WebSocketManager(server);
+wsManager.startHealthCheck();
+
+// Add WebSocket stats endpoint
+app.get('/ws-stats', (req, res) => {
+  res.json({ ok: true, ...wsManager.getStats() });
+});
+
+// Enhanced /decide endpoint with multiplayer support
+app.post("/decide-multiplayer", async (req, res) => {
+  const t0 = Date.now();
+  stats.total_requests++;
+  const payload = req.body || {};
+
+  try {
+    const roomId = payload.room_id;
+    if (!roomId) {
+      return res.status(400).json({ ok: false, error: "room_id required for multiplayer decisions" });
+    }
+
+    const room = wsManager.roomManager.getRoom(roomId);
+    if (!room) {
+      return res.status(404).json({ ok: false, error: `Room ${roomId} not found` });
+    }
+
+    // Get dual-player context
+    const dualPlayerPayload = room.getDualPlayerPayload();
+    if (!dualPlayerPayload) {
+      return res.status(400).json({ ok: false, error: "Insufficient players for multiplayer decision" });
+    }
+
+    // Enhanced prompt for dual-player coordination
+    const messages = buildDualPlayerMessages(dualPlayerPayload);
+
+    const upstream = await cerebrasChat(messages);
+    if (upstream.ok) {
+      const aiResponse = safeParseDecision(upstream.content);
+
+      // Add the decision to the room
+      const decision = room.addAIDecision(aiResponse);
+
+      // Generate agent debate based on the decision
+      generateAgentDebate(room, dualPlayerPayload, aiResponse);
+
+      return res.status(200).json({
+        ...aiResponse,
+        source: "cerebras-multiplayer",
+        latency_ms: Date.now() - t0,
+        usage: upstream.usage,
+        room_context: {
+          players: dualPlayerPayload.player1.id + " & " + dualPlayerPayload.player2.id,
+          cross_patterns: Object.keys(dualPlayerPayload.cross_patterns).length > 0
+        }
+      });
+    } else {
+      throw new Error(upstream.error);
+    }
+  } catch (error) {
+    log("Multiplayer decision error:", error.message);
+    return res.status(500).json({
+      ok: false,
+      error: "AI decision failed",
+      latency_ms: Date.now() - t0
+    });
+  }
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  log("🤖 AI Overlord Server with Multiplayer Support");
+  log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  log("Mode:", "LIVE + MULTIPLAYER");
   log("Port:", PORT);
   log("Model:", MODEL);
   log("Timeout:", CLIENT_TIMEOUT_MS + "ms");
   log("Cerebras Base:", CEREBRAS_BASE);
   log("Key tail:", "..." + CEREBRAS_API_KEY.slice(-6));
-  log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  log("WebSocket:", "ws://localhost:" + PORT + "/ws");
+  log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   log(`curl http://localhost:${PORT}/health`);
-  log(`curl -X POST http://localhost:${PORT}/decide -H "Content-Type: application/json" -d '{"player_id":"p","last_move":"left","recent_moves":["left","up"],"session_stats":{"best_time":5,"current_time":3},"overlord_mode":"aggressive","tick":7}'`);
-  log(`curl http://localhost:${PORT}/stats`);
+  log(`curl http://localhost:${PORT}/ws-stats`);
+  log(`WebSocket connection: ws://localhost:${PORT}/ws`);
 }).on("error", (e) => {
   console.error("Server failed to start:", e);
   process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  log('SIGTERM received, shutting down gracefully');
+  wsManager.destroy();
+  server.close(() => {
+    log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  log('SIGINT received, shutting down gracefully');
+  wsManager.destroy();
+  server.close(() => {
+    log('Server closed');
+    process.exit(0);
+  });
 });

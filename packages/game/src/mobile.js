@@ -58,6 +58,7 @@
 
 // ===== Lazy-load the game AFTER polyfills are in place =====
 let OverlordGameCtor; // filled by dynamic import
+let MultiplayerClientCtor; // filled by dynamic import
 
 // ===== Mobile constants =====
 const DPR = Math.min(window.devicePixelRatio || 1, 2); // cap for perf
@@ -68,6 +69,7 @@ const TAP_MAX_MS   = 300;
 let canvas;
 let game;
 let touchStart = null;
+let multiplayerClient = null;
 
 // ---- Canvas sizing (CSS vs backing store with DPR) ----
 function sizeCanvasToContainer() {
@@ -132,8 +134,35 @@ function setupTouchControls() {
 
     if (ax < TAP_MAX_PX && ay < TAP_MAX_PX && dt < TAP_MAX_MS) {
       game.shoot?.();
+
+      // Send shoot action to multiplayer
+      if (multiplayerClient?.isInMultiplayerMode()) {
+        multiplayerClient.sendPlayerMove({
+          action: 'shoot',
+          lane: game.state?.playerLane || 2
+        });
+      }
     } else if (ax > SWIPE_MIN_PX && ax > ay && dt < 500) {
-      dx < 0 ? game.moveLeft?.() : game.moveRight?.();
+      const direction = dx < 0 ? 'left' : 'right';
+      const oldLane = game.state?.playerLane || 2;
+
+      if (direction === 'left') {
+        game.moveLeft?.();
+      } else {
+        game.moveRight?.();
+      }
+
+      // Send movement to multiplayer
+      if (multiplayerClient?.isInMultiplayerMode()) {
+        const newLane = game.state?.playerLane || 2;
+        multiplayerClient.sendPlayerMove({
+          action: 'move',
+          direction: direction,
+          fromLane: oldLane,
+          toLane: newLane,
+          lane: newLane
+        });
+      }
     }
     touchStart = null;
   }, { passive: false });
@@ -207,6 +236,30 @@ async function initGame() {
     OverlordGameCtor = mod.OverlordGame;
   }
 
+  if (!MultiplayerClientCtor) {
+    const mod = await import('./multiplayer-client.js');
+    MultiplayerClientCtor = mod.MultiplayerClient;
+  }
+
+  // Initialize multiplayer client
+  multiplayerClient = new MultiplayerClientCtor();
+
+  // Set up multiplayer callbacks
+  multiplayerClient.setCallbacks({
+    onConnected: () => {
+      console.log('[mobile] Multiplayer connected');
+    },
+    onRoomJoined: (data) => {
+      console.log('[mobile] Joined multiplayer room:', data);
+    },
+    onGameStart: (data) => {
+      console.log('[mobile] Multiplayer game started:', data);
+    },
+    onError: (error) => {
+      console.error('[mobile] Multiplayer error:', error);
+    }
+  });
+
   sizeCanvasToContainer();
   console.log('[mobile] init OverlordGame', { backing: [canvas.width, canvas.height], DPR });
 
@@ -215,13 +268,78 @@ async function initGame() {
       document.getElementById('final-time').textContent = data.time.toFixed(1);
       document.getElementById('final-best').textContent = data.best.toFixed(1);
       document.getElementById('death-modal').classList.add('show');
+
+      // Send death event to multiplayer
+      if (multiplayerClient?.isInMultiplayerMode()) {
+        multiplayerClient.sendPlayerUpdate({
+          event: 'death',
+          survivalTime: data.time,
+          bestTime: data.best
+        });
+      }
+    },
+    onWin: (data) => {
+      // Show win modal
+      document.getElementById('win-time').textContent = data.time.toFixed(1);
+      document.getElementById('win-best').textContent = data.best.toFixed(1);
+      document.getElementById('win-modal').classList.add('show');
+
+      // Send win event to multiplayer
+      if (multiplayerClient?.isInMultiplayerMode()) {
+        multiplayerClient.sendPlayerUpdate({
+          event: 'win',
+          survivalTime: data.time,
+          bestTime: data.best
+        });
+      }
     },
     onTaunt: (message) => {
       document.getElementById('taunt-overlay').textContent = message;
     },
+    onDebug: (data) => {
+      // Relay AI decisions to multiplayer dashboard
+      if (multiplayerClient?.isInMultiplayerMode()) {
+        multiplayerClient.sendMessage('ai_decision_relay', {
+          decision: data.decision,
+          explain: data.explain,
+          lanes: data.lanes,
+          rtt: data.rtt,
+          playerId: multiplayerClient.getPlayerId(),
+          timestamp: Date.now()
+        });
+      }
+    },
     onUpdate: (data) => {
       document.getElementById('survival-time').textContent = data.time.toFixed(1) + 's';
       document.getElementById('best-time').textContent     = data.best.toFixed(1) + 's';
+
+      // Send periodic updates to multiplayer including full game state
+      if (multiplayerClient?.isInMultiplayerMode()) {
+        // Basic stats update
+        multiplayerClient.sendPlayerUpdate({
+          time: data.time,
+          best: data.best,
+          lane: game.state?.playerLane || 2,
+          ammo: data.ammo
+        });
+
+        // Full game state for real-time mirroring
+        if (game.state) {
+          multiplayerClient.sendGameState({
+            playerPosition: {
+              x: game.state.playerX || 0,
+              y: game.state.playerY || 0,
+              lane: game.state.playerLane || 2
+            },
+            bullets: game.state.bullets || [],
+            enemies: game.state.enemies || [],
+            gameTime: data.time,
+            score: data.best,
+            ammo: data.ammo,
+            phase: game.state.phase || 'beginner'
+          });
+        }
+      }
     }
   });
 
@@ -288,6 +406,13 @@ function boot() {
   const retryBtn = document.getElementById('retry-button');
   retryBtn?.addEventListener('click', () => {
     document.getElementById('death-modal')?.classList.remove('show');
+    game?.restart?.();
+    game.__started = true;
+  });
+
+  const playAgainBtn = document.getElementById('play-again-button');
+  playAgainBtn?.addEventListener('click', () => {
+    document.getElementById('win-modal')?.classList.remove('show');
     game?.restart?.();
     game.__started = true;
   });

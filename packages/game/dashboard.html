@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Overlord - Live Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a0a1a 100%);
+      color: #ffffff;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* Animated background particles */
+    .bg-particles {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .particle {
+      position: absolute;
+      background: rgba(255, 0, 64, 0.1);
+      border-radius: 50%;
+      animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px) rotate(0deg); opacity: 0.1; }
+      50% { transform: translateY(-20px) rotate(180deg); opacity: 0.3; }
+    }
+
+    /* Main dashboard grid */
+    .dashboard-container {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas:
+        "header header"
+        "games sidebar"
+        "debate debate";
+      height: 100vh;
+      gap: 20px;
+      padding: 20px;
+      transition: all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+
+    .dashboard-container.dual-player {
+      grid-template-columns: 1fr 1fr auto;
+      grid-template-areas:
+        "header header header"
+        "player1 player2 sidebar"
+        "debate debate debate";
+    }
+
+    /* Header */
+    .dashboard-header {
+      grid-area: header;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px 30px;
+      background: rgba(255, 0, 64, 0.1);
+      border: 1px solid rgba(255, 0, 64, 0.3);
+      border-radius: 10px;
+      backdrop-filter: blur(10px);
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: bold;
+      color: #ff0040;
+      text-shadow: 0 0 20px rgba(255, 0, 64, 0.5);
+    }
+
+    .room-info {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .room-id {
+      font-size: 18px;
+      color: #00ffff;
+      padding: 5px 15px;
+      border: 1px solid #00ffff;
+      border-radius: 5px;
+      background: rgba(0, 255, 255, 0.1);
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #00ff00;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.2); }
+    }
+
+    /* Game containers */
+    .games-area {
+      grid-area: games;
+      position: relative;
+      transition: all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+
+    .player-container {
+      position: relative;
+      background: rgba(0, 0, 0, 0.8);
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      overflow: hidden;
+      transition: all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
+      transform-origin: center;
+    }
+
+    .player1-container {
+      grid-area: player1;
+      width: 100%;
+      height: 100%;
+    }
+
+    .player2-container {
+      grid-area: player2;
+      width: 100%;
+      height: 100%;
+      transform: translateX(100%);
+      opacity: 0;
+      transition: all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+
+    .dashboard-container.dual-player .player2-container {
+      transform: translateX(0);
+      opacity: 1;
+    }
+
+    .player-header {
+      padding: 15px 20px;
+      background: linear-gradient(90deg, rgba(255, 0, 64, 0.2), rgba(0, 255, 255, 0.2));
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .player-name {
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .player1-name { color: #ff0040; }
+    .player2-name { color: #00ffff; }
+
+    .player-stats {
+      display: flex;
+      gap: 20px;
+      font-size: 14px;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .stat-label {
+      opacity: 0.8;
+      margin-bottom: 2px;
+    }
+
+    .stat-value {
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .game-canvas-container {
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 400px;
+    }
+
+    .game-canvas {
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      background: #0f0f0f;
+    }
+
+    .waiting-indicator {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 400px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .waiting-text {
+      font-size: 18px;
+      margin-bottom: 20px;
+    }
+
+    .loading-dots {
+      display: flex;
+      gap: 5px;
+    }
+
+    .loading-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #00ffff;
+      animation: loading 1.4s ease-in-out infinite both;
+    }
+
+    .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+    .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes loading {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      grid-area: sidebar;
+      width: 350px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      transition: all 0.6s ease-out;
+    }
+
+    .sidebar-panel {
+      background: rgba(0, 0, 0, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      backdrop-filter: blur(5px);
+    }
+
+    .panel-header {
+      padding: 15px 20px;
+      background: rgba(255, 0, 64, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 16px;
+      font-weight: bold;
+      color: #ff0040;
+    }
+
+    .panel-content {
+      padding: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .qr-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .qr-code {
+      width: 150px;
+      height: 150px;
+      background: #ffffff;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #000000;
+    }
+
+    .join-instructions {
+      text-align: center;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.4;
+    }
+
+    .ai-decisions {
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .decision-item {
+      margin-bottom: 10px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 5px;
+      border-left: 3px solid #00ffff;
+    }
+
+    .decision-time {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 10px;
+    }
+
+    .decision-action {
+      color: #00ffff;
+      font-weight: bold;
+    }
+
+    .decision-explanation {
+      color: rgba(255, 255, 255, 0.9);
+      margin-top: 3px;
+    }
+
+    /* Agent debate area */
+    .agent-debate {
+      grid-area: debate;
+      background: rgba(0, 0, 0, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      overflow: hidden;
+      max-height: 200px;
+      transition: all 0.7s ease-in-out;
+      backdrop-filter: blur(10px);
+    }
+
+    .dashboard-container.dual-player .agent-debate {
+      max-height: 300px;
+    }
+
+    .debate-header {
+      padding: 15px 30px;
+      background: linear-gradient(90deg, rgba(255, 0, 64, 0.2), rgba(0, 255, 255, 0.2));
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .debate-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #ffffff;
+    }
+
+    .debate-indicator {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .debate-content {
+      padding: 20px 30px;
+      height: 150px;
+      overflow-y: auto;
+      transition: height 0.7s ease-in-out;
+    }
+
+    .dashboard-container.dual-player .debate-content {
+      height: 220px;
+    }
+
+    .debate-message {
+      margin-bottom: 15px;
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      animation: slideInDebate 0.5s ease-out;
+    }
+
+    .strategist-message {
+      background: rgba(255, 0, 64, 0.1);
+      border-left: 3px solid #ff0040;
+      color: #ff8080;
+    }
+
+    .aggressive-message {
+      background: rgba(0, 255, 255, 0.1);
+      border-left: 3px solid #00ffff;
+      color: #80ffff;
+    }
+
+    .agent-name {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    @keyframes slideInDebate {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 0, 64, 0.5);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 0, 64, 0.7);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1200px) {
+      .sidebar {
+        width: 300px;
+      }
+
+      .dashboard-container {
+        gap: 15px;
+        padding: 15px;
+      }
+    }
+
+    /* Animation utilities */
+    .fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+
+    .slide-in-right {
+      animation: slideInRight 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+
+    .scale-in {
+      animation: scaleIn 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+
+    .glow-pulse {
+      animation: glowPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideInRight {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes scaleIn {
+      from {
+        transform: scale(0.8);
+        opacity: 0;
+      }
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes glowPulse {
+      0%, 100% {
+        box-shadow: 0 0 5px rgba(0, 255, 255, 0.3);
+      }
+      50% {
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.6), 0 0 30px rgba(0, 255, 255, 0.4);
+      }
+    }
+
+    /* Demo presentation enhancements */
+    .demo-mode .player-container {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .demo-mode .player-container::before {
+      content: '';
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      background: linear-gradient(45deg, #ff0040, #00ffff, #ff0040);
+      border-radius: 17px;
+      z-index: -1;
+      animation: borderRotate 3s linear infinite;
+    }
+
+    @keyframes borderRotate {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Performance mode */
+    .performance-mode * {
+      will-change: auto;
+    }
+
+    .performance-mode .particle {
+      display: none;
+    }
+
+    .performance-mode .glow-pulse {
+      animation: none;
+    }
+
+    /* Success indicators */
+    .success-indicator {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 40px;
+      background: rgba(0, 255, 0, 0.9);
+      color: #000000;
+      font-size: 24px;
+      font-weight: bold;
+      border-radius: 10px;
+      z-index: 2000;
+      animation: successPop 2s ease-out;
+    }
+
+    @keyframes successPop {
+      0% {
+        transform: translate(-50%, -50%) scale(0);
+        opacity: 0;
+      }
+      20% {
+        transform: translate(-50%, -50%) scale(1.2);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background particles -->
+  <div class="bg-particles" id="particles"></div>
+
+  <div class="dashboard-container" id="dashboard">
+    <!-- Header -->
+    <div class="dashboard-header">
+      <div class="title">🤖 AI OVERLORD LIVE DASHBOARD</div>
+      <div class="room-info">
+        <div class="room-id" id="room-id">ROOM: ABC123</div>
+        <div class="connection-status">
+          <div class="status-dot"></div>
+          <span id="connection-text">Connected</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Games area -->
+    <div class="games-area">
+      <!-- Player 1 -->
+      <div class="player-container player1-container" id="player1-container">
+        <div class="player-header">
+          <div class="player-name player1-name">Player 1</div>
+          <div class="player-stats" id="player1-stats">
+            <div class="stat-item">
+              <div class="stat-label">TIME</div>
+              <div class="stat-value" id="p1-time">0.0s</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">BEST</div>
+              <div class="stat-value" id="p1-best">0.0s</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">LANE</div>
+              <div class="stat-value" id="p1-lane">2</div>
+            </div>
+          </div>
+        </div>
+        <div class="game-canvas-container">
+          <canvas class="game-canvas" id="player1-canvas" width="400" height="600"></canvas>
+        </div>
+      </div>
+
+      <!-- Player 2 -->
+      <div class="player-container player2-container" id="player2-container">
+        <div class="player-header">
+          <div class="player-name player2-name">Player 2</div>
+          <div class="player-stats" id="player2-stats">
+            <div class="stat-item">
+              <div class="stat-label">TIME</div>
+              <div class="stat-value" id="p2-time">0.0s</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">BEST</div>
+              <div class="stat-value" id="p2-best">0.0s</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">LANE</div>
+              <div class="stat-value" id="p2-lane">2</div>
+            </div>
+          </div>
+        </div>
+        <div class="game-canvas-container">
+          <canvas class="game-canvas" id="player2-canvas" width="400" height="600"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <!-- QR Code Panel -->
+      <div class="sidebar-panel">
+        <div class="panel-header">📱 Join Game</div>
+        <div class="panel-content">
+          <div class="qr-container">
+            <div class="qr-code" id="qr-code">
+              [QR CODE]<br>
+              Scan to Join
+            </div>
+            <div class="join-instructions">
+              <strong>Waiting for players...</strong><br>
+              Scan QR code with mobile device to join the game
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Decisions Panel -->
+      <div class="sidebar-panel">
+        <div class="panel-header">🧠 AI Decisions</div>
+        <div class="panel-content">
+          <div class="ai-decisions" id="ai-decisions">
+            <div class="decision-item">
+              <div class="decision-time">Waiting for decisions...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent Debate Area -->
+    <div class="agent-debate">
+      <div class="debate-header">
+        <div class="debate-title">🤖 AI Agent Collaboration</div>
+        <div class="debate-indicator">
+          <div class="status-dot"></div>
+          <span>Live Discussion</span>
+        </div>
+      </div>
+      <div class="debate-content" id="debate-content">
+        <div class="debate-message strategist-message">
+          <div class="agent-name">🎯 STRATEGIST:</div>
+          <div>Initializing player behavior analysis. Waiting for movement patterns to establish predictive models.</div>
+        </div>
+        <div class="debate-message aggressive-message">
+          <div class="agent-name">⚡ AGGRESSIVE:</div>
+          <div>Ready to engage. Multiple attack vectors prepared. Awaiting dual-player coordination protocols.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/dashboard.js"></script>
+</body>
+</html>
