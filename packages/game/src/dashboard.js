@@ -169,6 +169,8 @@ class DashboardController {
 
     this.agentDebateMessages = [];
     this.aiDecisions = [];
+    this.debateSimulationRunning = false;
+    this.debateInterval = null;
 
     this.init();
   }
@@ -192,7 +194,6 @@ class DashboardController {
     this.setupWebSocket();
     this.setupUI();
     this.setupGameCanvases();
-    this.startDebateSimulation();
     this.setupResizeHandler();
 
     // Update room ID in UI
@@ -1004,16 +1005,56 @@ class DashboardController {
   }
 
   startDebateSimulation() {
+    if (this.debateSimulationRunning) return;
+
+    this.debateSimulationRunning = true;
+
+    // Clear the waiting message first
+    this.clearDebateContent();
+
     // Start with some initial debate messages
     setTimeout(() => this.simulateDebateMessage(), 2000);
     setTimeout(() => this.simulateDebateMessage(), 4000);
 
     // Continue simulating periodically
-    setInterval(() => {
+    this.debateInterval = setInterval(() => {
       if (Math.random() < 0.3) { // 30% chance every 3 seconds
         this.simulateDebateMessage();
       }
     }, 3000);
+  }
+
+  stopDebateSimulation() {
+    if (!this.debateSimulationRunning) return;
+
+    this.debateSimulationRunning = false;
+
+    if (this.debateInterval) {
+      clearInterval(this.debateInterval);
+      this.debateInterval = null;
+    }
+
+    // Clear debate content and show waiting message
+    this.clearDebateContent();
+    this.showDebateWaitingMessage();
+  }
+
+  clearDebateContent() {
+    const debateContent = document.getElementById('debate-content');
+    if (debateContent) {
+      debateContent.innerHTML = '';
+    }
+  }
+
+  showDebateWaitingMessage() {
+    const debateContent = document.getElementById('debate-content');
+    if (debateContent) {
+      debateContent.innerHTML = `
+        <div class="debate-message" style="text-align: center; color: #666666; font-style: italic;">
+          AI agents will collaborate here when players connect...
+        </div>
+      `;
+    }
   }
 
   simulateDebateMessage() {
@@ -1262,10 +1303,11 @@ class DashboardController {
   }
 
   updateJoinInstructions() {
+    const connectedCount = this.getConnectedPlayerCount();
+
     // Update input orchestration panel
     const inputOrchText = document.getElementById('input-orch-text');
     if (inputOrchText) {
-      const connectedCount = this.getConnectedPlayerCount();
       if (connectedCount === 0) {
         inputOrchText.textContent = 'Recent moves will appear here…';
       } else if (connectedCount === 1) {
@@ -1278,7 +1320,6 @@ class DashboardController {
     // Update strategy agent
     const strategyText = document.getElementById('strategy-agent-text');
     if (strategyText) {
-      const connectedCount = this.getConnectedPlayerCount();
       if (connectedCount === 0) {
         strategyText.textContent = 'Calculating optimal approach…';
       } else if (connectedCount === 1) {
@@ -1291,13 +1332,25 @@ class DashboardController {
     // Update shooting agent
     const shootingText = document.getElementById('shooting-agent-text');
     if (shootingText) {
-      const connectedCount = this.getConnectedPlayerCount();
       if (connectedCount === 0) {
         shootingText.textContent = 'TARGET ACQUISITION IN PROGRESS…';
       } else if (connectedCount === 1) {
         shootingText.textContent = 'SINGLE TARGET LOCKED. PREPARING ENGAGEMENT PROTOCOLS.';
       } else {
         shootingText.textContent = 'DUAL TARGETS ACQUIRED. COORDINATED STRIKE PATTERNS ACTIVE.';
+      }
+    }
+
+    // Manage agent debate simulation based on player connections
+    if (connectedCount > 0) {
+      // Start debate simulation when players are connected
+      if (!this.debateSimulationRunning) {
+        this.startDebateSimulation();
+      }
+    } else {
+      // Stop debate simulation when no players are connected
+      if (this.debateSimulationRunning) {
+        this.stopDebateSimulation();
       }
     }
   }
