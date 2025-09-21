@@ -207,23 +207,21 @@
       }
 
       .game-canvas-container {
-        padding: 5px;
+        padding: 0;
         display: flex;
         justify-content: center;
         align-items: center;
-        min-height: 450px;
+        height: 500px;
         flex: 1;
       }
 
       .game-canvas {
-        border: 2px solid #e0e0e0;
-        border-radius: 10px;
+        border: none;
+        border-radius: 0;
         background: #0f0f0f;
         width: 100%;
-        height: auto;
-        max-width: 450px;
-        max-height: 450px;
-        object-fit: contain;
+        height: 100%;
+        object-fit: cover;
       }
 
       .waiting-indicator {
@@ -656,12 +654,7 @@
             </div>
           </div>
           <div class="game-canvas-container">
-            <canvas
-              class="game-canvas"
-              id="player1-canvas"
-              width="450"
-              height="450"
-            ></canvas>
+            <canvas class="game-canvas" id="player1-canvas"></canvas>
           </div>
         </div>
 
@@ -685,12 +678,7 @@
             </div>
           </div>
           <div class="game-canvas-container">
-            <canvas
-              class="game-canvas"
-              id="player2-canvas"
-              width="450"
-              height="450"
-            ></canvas>
+            <canvas class="game-canvas" id="player2-canvas"></canvas>
           </div>
         </div>
       </div>
@@ -702,6 +690,18 @@
           <div class="panel-header">Input to Multi-Agent Orchestration</div>
           <div class="panel-content">
             <div id="input-orch-text">Recent moves will appear here…</div>
+          </div>
+        </div>
+
+        <!-- Decision Agent Feed -->
+        <div class="sidebar-panel">
+          <div class="panel-header">Decision Agent Feed</div>
+          <div class="panel-content">
+            <div class="ai-decisions" id="ai-decisions">
+              <div class="decision-item">
+                <div class="decision-time">Waiting for decisions...</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -718,18 +718,6 @@
           <div class="panel-header">Shooting Agent</div>
           <div class="panel-content">
             <div id="shooting-agent-text">TARGET ACQUISITION IN PROGRESS…</div>
-          </div>
-        </div>
-
-        <!-- Decision Agent Feed -->
-        <div class="sidebar-panel">
-          <div class="panel-header">Decision Agent Feed</div>
-          <div class="panel-content">
-            <div class="ai-decisions" id="ai-decisions">
-              <div class="decision-item">
-                <div class="decision-time">Waiting for decisions...</div>
-              </div>
-            </div>
           </div>
         </div>
 

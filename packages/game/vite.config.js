@@ -3,8 +3,9 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   server: {
     port: 3000,
-    host: true, // Allow external connections (for mobile testing)
-    allowedHosts: 'all', // Allow all hosts for demo purposes
+    host: '0.0.0.0', // Allow external connections (for mobile testing)
+    allowedHosts: ['all', 'f938ebfa9c0b.ngrok-free.app'], // Allow all hosts for demo purposes
+    disableHostCheck: true
     proxy: {
       // Proxy WebSocket requests to AI server
       '/ws': {

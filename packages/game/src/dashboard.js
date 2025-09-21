@@ -193,6 +193,7 @@ class DashboardController {
     this.setupUI();
     this.setupGameCanvases();
     this.startDebateSimulation();
+    this.setupResizeHandler();
 
     // Update room ID in UI
     document.getElementById('room-id').textContent = `ROOM: ${this.roomId}`;
@@ -201,6 +202,18 @@ class DashboardController {
     this.updateJoinInstructions();
 
     console.log('Dashboard initialized for room:', this.roomId);
+  }
+
+  setupResizeHandler() {
+    // Handle window resize to keep canvases properly sized
+    window.addEventListener('resize', () => {
+      // Resize all active player canvases
+      this.players.forEach((player, playerId) => {
+        if (player.canvas) {
+          this.sizeCanvasToContainer(player.canvas);
+        }
+      });
+    });
   }
 
   setupBackgroundParticles() {
@@ -416,8 +429,30 @@ class DashboardController {
     this.showPlayerWaitingState('player2');
   }
 
+  sizeCanvasToContainer(canvas) {
+    const container = canvas.parentElement;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const cssW = Math.max(1, Math.floor(rect.width));
+    const cssH = Math.max(1, Math.floor(rect.height));
+
+    // Set CSS size to fill container
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+
+    // Set canvas backing store size
+    canvas.width = cssW;
+    canvas.height = cssH;
+
+    console.log(`[Dashboard] Canvas sized: ${cssW}x${cssH} for container`);
+  }
+
   setupPlayerGame(playerId, canvas) {
     try {
+      // Size canvas to fill its container
+      this.sizeCanvasToContainer(canvas);
+
       // For dashboard, we don't run an independent game - we create a spectator renderer
       const spectatorRenderer = {
         canvas: canvas,
@@ -1187,7 +1222,7 @@ class DashboardController {
     const canvasContainer = container.querySelector('.game-canvas-container');
     if (canvasContainer) {
       canvasContainer.innerHTML = `
-        <canvas class="game-canvas" id="${playerId}-canvas" width="450" height="450"></canvas>
+        <canvas class="game-canvas" id="${playerId}-canvas"></canvas>
       `;
     }
   }
