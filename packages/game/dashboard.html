@@ -33,7 +33,7 @@
       .dashboard-container {
         display: grid;
         grid-template-columns: 65% 35%;
-        grid-template-rows: auto 1fr 100px;
+        grid-template-rows: auto 1fr 160px;
         grid-template-areas:
           "header header"
           "games sidebar"
@@ -64,6 +64,14 @@
         border: 1px solid #e0e0e0;
         border-radius: 8px;
         min-height: 50px;
+      }
+
+      .project-name {
+        font-size: 24px;
+        font-weight: bold;
+        color: #333333;
+        text-transform: uppercase;
+        letter-spacing: 1px;
       }
 
       .header-spacer {
@@ -397,12 +405,12 @@
         border: 1px solid #e0e0e0;
         border-radius: 10px;
         overflow: hidden;
-        max-height: 100px;
+        max-height: 160px;
         transition: all 0.3s ease;
       }
 
       .dashboard-container.dual-player .agent-debate {
-        max-height: 120px;
+        max-height: 160px;
       }
 
       .debate-header {
@@ -430,13 +438,13 @@
 
       .debate-content {
         padding: 8px 15px;
-        height: 60px;
+        height: 120px;
         overflow-y: auto;
         transition: height 0.3s ease;
       }
 
       .dashboard-container.dual-player .debate-content {
-        height: 70px;
+        height: 120px;
       }
 
       .debate-message {
@@ -835,6 +843,7 @@
     <div class="dashboard-container" id="dashboard">
       <!-- Header -->
       <div class="dashboard-header">
+        <div class="project-name">Terminator</div>
         <div class="header-spacer"></div>
         <div class="room-status">
           <div class="room-code" id="room-id">ABC123</div>
