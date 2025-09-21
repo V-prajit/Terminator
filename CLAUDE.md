@@ -87,9 +87,9 @@ VITE_AI_SERVER_URL=http://localhost:8787
 VITE_MOCK_MODE=true|false
 ```
 
-## ✅ Recent Major Updates (2025-09-20)
+## Recent Major Updates (2025-09-20)
 
-### 🚀 Hybrid AI + Local Logic System
+### Hybrid AI + Local Logic System
 - **Problem Solved**: Eliminated AI latency issues while maintaining intelligent predictions
 - **Implementation**: Dual-response architecture with immediate local fallback + async AI enhancement
 - **Phase-based routing**:
@@ -97,30 +97,30 @@ VITE_MOCK_MODE=true|false
   - **Intermediate (5-20s)**: Hybrid mode - local immediate + AI async for 2-bullet scenarios
   - **Expert (20s+)**: Full hybrid mode - local immediate + AI async for 3-bullet scenarios
 
-### 🎯 Progressive Bullet Difficulty
+### Progressive Bullet Difficulty
 - **0-5 seconds**: Maximum 1 bullet (beginner-friendly)
 - **5-20 seconds**: Maximum 2 bullets (intermediate challenge)
 - **20+ seconds**: Maximum 3 bullets (expert level)
 - **LLM Integration**: AI receives time-based constraints in system prompt
 - **Smart Prediction**: AI analyzes `recent_lanes` patterns to predict movement
 
-### 🧠 Enhanced AI Prediction System
+### Enhanced AI Prediction System
 - **Fixed center-column shooting**: AI now receives complete position data (`recent_lanes`, `player_lane`)
 - **Proper output format**: AI returns `{"lanes":[0,1,2]}` arrays instead of invalid responses
 - **Movement pattern analysis**: AI predicts where player will move next, not current position
 - **Graceful degradation**: 400ms AI timeout with instant local fallback
 
-### ⚡ Performance Optimizations
+### Performance Optimizations
 - **Zero perceived lag**: Always returns immediate response (0ms for local, <400ms for AI)
 - **Rate limiting resilience**: Hybrid system handles Cerebras API throttling gracefully
 - **Robust fallback**: Local logic provides smart predictions when AI unavailable
 
 ## Current System Status
-✅ **All major issues resolved**
-✅ **Progressive difficulty implemented**
-✅ **Hybrid AI system operational**
-✅ **Zero-latency responsiveness achieved**
-✅ **Smart lane prediction working**
+- **All major issues resolved**
+- **Progressive difficulty implemented**
+- **Hybrid AI system operational**
+- **Zero-latency responsiveness achieved**
+- **Smart lane prediction working**
 
 ## Hackathon Presentation Notes
 - **Demo Focus**: Showcase AI intelligence in expert phase (multi-bullet scenarios)

@@ -47,12 +47,12 @@ class DashboardAnimator {
   }
 
   showConnectionNotification() {
-    const notification = this.createNotification('🔗 Player 2 Connecting...', 'info');
+    const notification = this.createNotification('Player 2 Connecting...', 'info');
     this.showNotification(notification);
   }
 
   showSuccessNotification() {
-    const notification = this.createNotification('✅ Dual Player Mode Active!', 'success');
+    const notification = this.createNotification('Dual Player Mode Active!', 'success');
     this.showNotification(notification);
   }
 
@@ -126,7 +126,7 @@ class DashboardAnimator {
     console.log('Dashboard transition to dual-player mode complete');
 
     // Show success indicator
-    this.showSuccessIndicator('🎮 DUAL PLAYER MODE ACTIVATED!');
+    this.showSuccessIndicator('DUAL PLAYER MODE ACTIVATED!');
 
     // Add demo mode visual enhancements
     document.body.classList.add('demo-mode');
@@ -297,7 +297,7 @@ class DashboardController {
       const message = JSON.parse(event.data);
       const { type, data } = message;
 
-      console.log('[Dashboard] 📨 WebSocket message received:', type, data);
+      console.log('[Dashboard] WebSocket message received:', type, data);
 
       switch (type) {
         case 'welcome':
@@ -803,7 +803,7 @@ class DashboardController {
   }
 
   onGameStateUpdate(data) {
-    console.log('[Dashboard] 🎮 Game state update received:', data);
+    console.log('[Dashboard] Game state update received:', data);
 
     // Find which player slot this game state belongs to
     let playerSlot = null;
@@ -813,14 +813,14 @@ class DashboardController {
       }
     });
 
-    console.log('[Dashboard] 🎯 Found player slot:', playerSlot, 'for player:', data.playerId);
+    console.log('[Dashboard] Found player slot:', playerSlot, 'for player:', data.playerId);
 
     if (playerSlot) {
       const player = this.players.get(playerSlot);
-      console.log('[Dashboard] 🎬 Player object:', player);
+      console.log('[Dashboard] Player object:', player);
 
       if (player && player.spectatorRenderer) {
-        console.log('[Dashboard] 🚀 Rendering game state to canvas:', data.gameState);
+        console.log('[Dashboard] Rendering game state to canvas:', data.gameState);
 
         // Update the spectator renderer with the new game state
         player.spectatorRenderer.render(data.gameState);
@@ -837,10 +837,10 @@ class DashboardController {
       }
     } else {
       console.warn('[Dashboard] ❌ No player slot found for player ID:', data.playerId);
-      console.log('[Dashboard] 📊 Current players:', Array.from(this.players.entries()));
+      console.log('[Dashboard] Current players:', Array.from(this.players.entries()));
 
       // Fallback: Auto-create player slot for this player ID
-      console.log('[Dashboard] 🔧 Auto-creating player slot for:', data.playerId);
+      console.log('[Dashboard] Auto-creating player slot for:', data.playerId);
       this.onPlayerJoin(data.playerId);
 
       // Try rendering again after creating the slot
@@ -1087,7 +1087,7 @@ class DashboardController {
     const messageEl = document.createElement('div');
     messageEl.className = `debate-message ${agent}-message`;
     messageEl.innerHTML = `
-      <div class="agent-name">${agent === 'strategist' ? '🎯 STRATEGIST:' : '⚡ AGGRESSIVE:'}</div>
+      <div class="agent-name">${agent === 'strategist' ? 'STRATEGIST:' : 'AGGRESSIVE:'}</div>
       <div>${message}</div>
     `;
 

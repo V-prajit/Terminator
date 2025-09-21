@@ -115,7 +115,7 @@ async function initGames() {
     await cerebrasGame.init();
     await openrouterGame.init();
 
-    console.log('🎮 Speed comparison demo ready!');
+    console.log('Speed comparison demo ready!');
     console.log('Left: Cerebras (ultra-fast inference)');
     console.log('Right: OpenRouter (traditional speed)');
 

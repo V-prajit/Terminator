@@ -951,7 +951,7 @@ app.post("/decide-multiplayer", async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  log("🤖 AI Overlord Server with Multiplayer Support");
+  log("AI Overlord Server with Multiplayer Support");
   log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   log("Mode:", "LIVE + MULTIPLAYER");
   log("Port:", PORT);

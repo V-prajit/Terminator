@@ -1,24 +1,24 @@
 #!/bin/bash
 
-echo "🚀 AI Overlord Project Setup"
+echo "AI Overlord Project Setup"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Check Node.js
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js 18+ first."
+    echo "Node.js is not installed. Please install Node.js 18+ first."
     exit 1
 fi
 
-echo "✅ Node.js $(node --version) detected"
+echo "Node.js $(node --version) detected"
 
 # Install dependencies
 echo ""
-echo "📦 Installing dependencies..."
+echo "Installing dependencies..."
 npm install
 
 # Setup AI server environment
 echo ""
-echo "🤖 Setting up AI server..."
+echo "Setting up AI server..."
 if [ ! -f "packages/ai-server/.env" ]; then
     cp packages/ai-server/.env.example packages/ai-server/.env
     echo "   Created .env file - please add your Cerebras API key"
@@ -28,7 +28,7 @@ fi
 
 # Create game .env
 echo ""
-echo "🎮 Setting up game client..."
+echo "Setting up game client..."
 if [ ! -f "packages/game/.env" ]; then
     echo "VITE_AI_SERVER_URL=http://localhost:8787" > packages/game/.env
     echo "VITE_MOCK_MODE=false" >> packages/game/.env
@@ -38,10 +38,10 @@ else
 fi
 
 echo ""
-echo "✨ Setup complete!"
+echo "Setup complete!"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📋 Next Steps:"
+echo "Next Steps:"
 echo ""
 echo "For TEAMMATE A (AI/Backend):"
 echo "  1. Add Cerebras API key to packages/ai-server/.env"
@@ -57,7 +57,7 @@ echo "To run both together:"
 echo "  npm run dev (from root)"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "⚡ Quick Test Commands:"
+echo "Quick Test Commands:"
 echo ""
 echo "Test AI server:"
 echo "  curl -X POST http://localhost:8787/decide \\"
@@ -67,4 +67,4 @@ echo ""
 echo "Run load test:"
 echo "  cd packages/ai-server && node test.js"
 echo ""
-echo "Good luck with your hackathon! 🏆"
+echo "Good luck with your hackathon!"

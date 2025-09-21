@@ -152,7 +152,7 @@ export class MultiplayerClient {
         z-index: 1000;
         backdrop-filter: blur(5px);
       ">
-        🔗 ${displayName} • Room: ${this.roomId}
+        ${displayName} • Room: ${this.roomId}
       </div>
     `;
 
@@ -317,7 +317,7 @@ export class MultiplayerClient {
           z-index: 1000;
           backdrop-filter: blur(5px);
         ">
-          🔗 ${status} • Room: ${this.roomId}
+          ${status} • Room: ${this.roomId}
         </div>
       `;
     }
@@ -355,9 +355,9 @@ export class MultiplayerClient {
       timestamp: Date.now()
     };
 
-    console.log('[MultiplayerClient] 📤 Sending game state:', payload);
+    console.log('[MultiplayerClient] Sending game state:', payload);
     const success = this.sendMessage('game_state', payload);
-    console.log('[MultiplayerClient] 📤 Send result:', success);
+    console.log('[MultiplayerClient] Send result:', success);
   }
 
   disconnect() {

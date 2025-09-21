@@ -811,9 +811,9 @@ export class OverlordGame {
 
       // Log taunt type for debugging
       if (result.type === 'personalized') {
-        console.log(`[Game] 🤖 Personalized taunt for ${result.playerName}: "${message}"`);
+        console.log(`[Game] Personalized taunt for ${result.playerName}: "${message}"`);
       } else {
-        console.log(`[Game] 💬 Fallback taunt (${result.type}): "${message}"`);
+        console.log(`[Game] Fallback taunt (${result.type}): "${message}"`);
       }
 
     } catch (err) {
@@ -918,7 +918,7 @@ export class OverlordGame {
     if (!this._frameCount) this._frameCount = 0;
     this._frameCount++;
     if (this._frameCount % 60 === 0) {
-      console.log('[Game] 🎮 Update loop running - frame:', this._frameCount, 'dead:', this.state.dead, 'won:', this.state.won);
+      console.log('[Game] Update loop running - frame:', this._frameCount, 'dead:', this.state.dead, 'won:', this.state.won);
     }
 
     const now = Date.now();
@@ -1028,7 +1028,7 @@ export class OverlordGame {
 
     // Debug: Log onUpdate callback every 60 frames
     if (this._frameCount % 60 === 0) {
-      console.log('[Game] 📤 Calling onUpdate callback - time:', this.state.survivalTime, 'bullets:', this.state.bullets.length);
+      console.log('[Game] Calling onUpdate callback - time:', this.state.survivalTime, 'bullets:', this.state.bullets.length);
     }
 
     this.callbacks.onUpdate({
