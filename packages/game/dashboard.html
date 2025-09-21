@@ -293,6 +293,44 @@
         font-size: 16px;
         font-weight: bold;
         color: #333333;
+        position: relative;
+        overflow: hidden;
+      }
+
+      /* Vibrant colored headers */
+      .panel-header.ai-performance {
+        background: linear-gradient(135deg, #00ffff, #00cccc);
+        color: #ffffff;
+        text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+      }
+
+      .panel-header.player-stats {
+        background: linear-gradient(135deg, #ff6b35, #ff8c52);
+        color: #ffffff;
+        text-shadow: 0 0 10px rgba(255, 107, 53, 0.5);
+        box-shadow: 0 0 15px rgba(255, 107, 53, 0.3);
+      }
+
+      .panel-header.system-metrics {
+        background: linear-gradient(135deg, #4ecdc4, #44b3a8);
+        color: #ffffff;
+        text-shadow: 0 0 10px rgba(78, 205, 196, 0.5);
+        box-shadow: 0 0 15px rgba(78, 205, 196, 0.3);
+      }
+
+      .panel-header.realtime-data {
+        background: linear-gradient(135deg, #45b7d1, #3a9bc1);
+        color: #ffffff;
+        text-shadow: 0 0 10px rgba(69, 183, 209, 0.5);
+        box-shadow: 0 0 15px rgba(69, 183, 209, 0.3);
+      }
+
+      .panel-header.prediction-analysis {
+        background: linear-gradient(135deg, #96ceb4, #7cb8a1);
+        color: #ffffff;
+        text-shadow: 0 0 10px rgba(150, 206, 180, 0.5);
+        box-shadow: 0 0 15px rgba(150, 206, 180, 0.3);
       }
 
       .panel-content {
@@ -573,6 +611,177 @@
         }
       }
 
+      /* Performance Metrics Styling */
+      .metric-gauge {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        gap: 15px;
+      }
+
+      .gauge-container {
+        position: relative;
+        width: 60px;
+        height: 60px;
+      }
+
+      .gauge-background {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: conic-gradient(
+          from 0deg,
+          #e0e0e0 0deg,
+          #e0e0e0 360deg
+        );
+        position: relative;
+      }
+
+      .gauge-fill {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        transition: background 0.3s ease;
+      }
+
+      .gauge-fill.latency {
+        background: conic-gradient(
+          from 0deg,
+          #00ff00 0deg,
+          #00ff00 var(--gauge-degrees, 90deg),
+          #e0e0e0 var(--gauge-degrees, 90deg),
+          #e0e0e0 360deg
+        );
+      }
+
+      .gauge-fill.accuracy {
+        background: conic-gradient(
+          from 0deg,
+          #00ffff 0deg,
+          #00ffff var(--gauge-degrees, 90deg),
+          #e0e0e0 var(--gauge-degrees, 90deg),
+          #e0e0e0 360deg
+        );
+      }
+
+      .gauge-fill.fps {
+        background: conic-gradient(
+          from 0deg,
+          #ff6b35 0deg,
+          #ff6b35 var(--gauge-degrees, 90deg),
+          #e0e0e0 var(--gauge-degrees, 90deg),
+          #e0e0e0 360deg
+        );
+      }
+
+      .gauge-center {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 40px;
+        height: 40px;
+        background: #ffffff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: bold;
+        color: #333333;
+      }
+
+      .metric-info {
+        flex: 1;
+      }
+
+      .metric-label {
+        font-size: 14px;
+        font-weight: bold;
+        margin-bottom: 3px;
+      }
+
+      .metric-value {
+        font-size: 12px;
+        color: #666666;
+      }
+
+      .phase-indicator {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 15px;
+      }
+
+      .phase-step {
+        flex: 1;
+        height: 8px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .phase-step.active {
+        background: linear-gradient(90deg, #00ffff, #00cccc);
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+      }
+
+      .phase-step.completed {
+        background: linear-gradient(90deg, #00ff00, #00cc00);
+      }
+
+      .phase-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        color: #666666;
+        margin-top: 5px;
+      }
+
+      .ai-emotion {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.05);
+        border-radius: 8px;
+        margin-bottom: 10px;
+      }
+
+      .emotion-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        transition: all 0.3s ease;
+      }
+
+      .emotion-indicator.calculating {
+        background: #ffff00;
+        animation: pulse 1s ease-in-out infinite;
+      }
+
+      .emotion-indicator.confident {
+        background: #00ff00;
+        box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+      }
+
+      .emotion-indicator.aggressive {
+        background: #ff0000;
+        box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+      }
+
+      .emotion-indicator.frustrated {
+        background: #ff6600;
+        animation: shake 0.5s ease-in-out infinite;
+      }
+
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-2px); }
+        75% { transform: translateX(2px); }
+      }
+
       /* Performance mode */
       .performance-mode * {
         will-change: auto;
@@ -685,48 +894,92 @@
 
       <!-- Sidebar -->
       <div class="sidebar">
-        <!-- Input to Multi-Agent Orchestration -->
-        <div class="sidebar-panel tall" id="input-orch-panel">
-          <div class="panel-header">Input to Multi-Agent Orchestration</div>
-          <div class="panel-content">
-            <div id="input-orch-text">Recent moves will appear here…</div>
-          </div>
-        </div>
-
-        <!-- Decision Agent Feed -->
+        <!-- AI Performance Metrics -->
         <div class="sidebar-panel">
-          <div class="panel-header">Decision Agent Feed</div>
+          <div class="panel-header ai-performance">AI Performance Metrics</div>
           <div class="panel-content">
-            <div class="ai-decisions" id="ai-decisions">
-              <div class="decision-item">
-                <div class="decision-time">Waiting for decisions...</div>
+            <div class="metric-gauge">
+              <div class="gauge-container">
+                <div class="gauge-background"></div>
+                <div class="gauge-fill latency" id="latency-gauge"></div>
+                <div class="gauge-center" id="latency-value">0ms</div>
+              </div>
+              <div class="metric-info">
+                <div class="metric-label">Response Time</div>
+                <div class="metric-value">Target: <400ms</div>
+              </div>
+            </div>
+            <div class="metric-gauge">
+              <div class="gauge-container">
+                <div class="gauge-background"></div>
+                <div class="gauge-fill accuracy" id="accuracy-gauge"></div>
+                <div class="gauge-center" id="accuracy-value">0%</div>
+              </div>
+              <div class="metric-info">
+                <div class="metric-label">Prediction Accuracy</div>
+                <div class="metric-value">Live tracking</div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Strategy Agent -->
-        <div class="sidebar-panel tall" id="strategy-panel">
-          <div class="panel-header">Strategy Agent</div>
-          <div class="panel-content">
-            <div id="strategy-agent-text">Calculating optimal approach…</div>
-          </div>
-        </div>
-
-        <!-- Shooting Agent -->
-        <div class="sidebar-panel tall" id="shooting-panel">
-          <div class="panel-header">Shooting Agent</div>
-          <div class="panel-content">
-            <div id="shooting-agent-text">TARGET ACQUISITION IN PROGRESS…</div>
-          </div>
-        </div>
-
-        <!-- Performance Metrics (Tokens/Second only) -->
+        <!-- System Performance -->
         <div class="sidebar-panel">
-          <div class="panel-header">Performance Metrics</div>
+          <div class="panel-header system-metrics">System Performance</div>
           <div class="panel-content">
-            <div>
-              Tokens/Second: <strong id="tokens-per-second">0.00</strong>
+            <div class="metric-gauge">
+              <div class="gauge-container">
+                <div class="gauge-background"></div>
+                <div class="gauge-fill fps" id="fps-gauge"></div>
+                <div class="gauge-center" id="fps-value">60</div>
+              </div>
+              <div class="metric-info">
+                <div class="metric-label">Frames Per Second</div>
+                <div class="metric-value">Target: 60 FPS</div>
+              </div>
+            </div>
+            <div style="margin-top: 10px;">
+              <div style="font-size: 12px; margin-bottom: 5px;">Tokens/Second: <strong id="tokens-per-second">0.00</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Game Phase Progression -->
+        <div class="sidebar-panel">
+          <div class="panel-header realtime-data">Game Phase Progression</div>
+          <div class="panel-content">
+            <div class="phase-indicator">
+              <div class="phase-step completed" id="phase-beginner"></div>
+              <div class="phase-step" id="phase-intermediate"></div>
+              <div class="phase-step" id="phase-expert"></div>
+            </div>
+            <div class="phase-labels">
+              <span>Beginner</span>
+              <span>Intermediate</span>
+              <span>Expert</span>
+            </div>
+            <div style="margin-top: 15px; font-size: 12px;">
+              <div>Current Phase: <strong id="current-phase">Beginner</strong></div>
+              <div>Survival Time: <strong id="survival-time">0.0s</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Personality & Decision Analysis -->
+        <div class="sidebar-panel">
+          <div class="panel-header prediction-analysis">AI Personality & Decisions</div>
+          <div class="panel-content">
+            <div class="ai-emotion">
+              <div class="emotion-indicator calculating" id="ai-emotion-indicator"></div>
+              <div>
+                <div style="font-size: 14px; font-weight: bold;" id="ai-emotion-text">Calculating...</div>
+                <div style="font-size: 11px; color: #666;" id="ai-confidence">Confidence: 50%</div>
+              </div>
+            </div>
+            <div class="ai-decisions" id="ai-decisions">
+              <div class="decision-item">
+                <div class="decision-time">Waiting for AI decisions...</div>
+              </div>
             </div>
           </div>
         </div>

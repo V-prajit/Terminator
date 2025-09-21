@@ -264,29 +264,140 @@ class Sfx {
   taunt() { this.playTone(300, 0.15, 'sine'); }
 }
 
-// Visual effects manager
+// Enhanced Visual effects manager with particles and screen shake
 class EffectsManager {
   constructor() {
     this.effects = [];
+    this.particles = [];
+    this.screenShake = { x: 0, y: 0, intensity: 0, duration: 0 };
+    this.aiThinking = { active: false, pulse: 0, confidence: 0 };
   }
-  
+
   add(effect) {
     this.effects.push(effect);
   }
-  
+
+  addParticles(x, y, count, type = 'bullet') {
+    for (let i = 0; i < count; i++) {
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 10,
+        y: y + (Math.random() - 0.5) * 10,
+        vx: (Math.random() - 0.5) * 200,
+        vy: (Math.random() - 0.5) * 200,
+        life: 1.0,
+        maxLife: 0.5 + Math.random() * 0.5,
+        size: 2 + Math.random() * 4,
+        color: type === 'bullet' ? [255, 0, 64] : type === 'explosion' ? [255, 100, 0] : [0, 255, 255],
+        type: type
+      });
+    }
+  }
+
+  addScreenShake(intensity = 5, duration = 200) {
+    this.screenShake.intensity = Math.max(this.screenShake.intensity, intensity);
+    this.screenShake.duration = Math.max(this.screenShake.duration, duration);
+  }
+
+  setAIThinking(active, confidence = 0.5) {
+    this.aiThinking.active = active;
+    this.aiThinking.confidence = confidence;
+  }
+
   update(dt) {
+    // Update effects
     this.effects = this.effects.filter(effect => {
       effect.time += dt;
       return effect.time < effect.duration;
     });
+
+    // Update particles
+    this.particles = this.particles.filter(particle => {
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.life -= dt / particle.maxLife;
+      particle.vy += 100 * dt; // gravity
+      return particle.life > 0;
+    });
+
+    // Update screen shake
+    if (this.screenShake.duration > 0) {
+      this.screenShake.duration -= dt * 1000;
+      const t = this.screenShake.duration / 200;
+      this.screenShake.x = (Math.random() - 0.5) * this.screenShake.intensity * t;
+      this.screenShake.y = (Math.random() - 0.5) * this.screenShake.intensity * t;
+    } else {
+      this.screenShake.x = 0;
+      this.screenShake.y = 0;
+      this.screenShake.intensity = 0;
+    }
+
+    // Update AI thinking pulse
+    this.aiThinking.pulse += dt * 4;
   }
-  
+
   render(renderer) {
+    // Render particles first (behind other effects)
+    this.particles.forEach(particle => {
+      const alpha = particle.life;
+      const size = particle.size * (0.5 + particle.life * 0.5);
+      const [r, g, b] = particle.color;
+
+      renderer.ctx.save();
+      renderer.ctx.globalAlpha = alpha * 0.8;
+      renderer.ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      renderer.ctx.shadowBlur = 8;
+      renderer.ctx.shadowColor = `rgb(${r}, ${g}, ${b})`;
+      renderer.ctx.beginPath();
+      renderer.ctx.arc(particle.x, particle.y, size, 0, Math.PI * 2);
+      renderer.ctx.fill();
+      renderer.ctx.restore();
+    });
+
+    // Render effects
     this.effects.forEach(effect => {
       if (effect.type === 'explosion') {
-        renderer.drawExplosion(effect.x, effect.y, effect.size, effect.time * 10);
+        this.renderEnhancedExplosion(renderer, effect);
       }
     });
+  }
+
+  renderEnhancedExplosion(renderer, effect) {
+    const progress = effect.time / effect.duration;
+    const alpha = Math.max(0, 1 - progress);
+    const outerRadius = effect.size * (1 + progress * 2);
+    const innerRadius = effect.size * progress;
+
+    renderer.ctx.save();
+
+    // Outer explosion ring
+    const gradient = renderer.ctx.createRadialGradient(
+      effect.x, effect.y, innerRadius,
+      effect.x, effect.y, outerRadius
+    );
+    gradient.addColorStop(0, `rgba(255, 100, 0, ${alpha * 0.8})`);
+    gradient.addColorStop(0.5, `rgba(255, 150, 0, ${alpha * 0.4})`);
+    gradient.addColorStop(1, `rgba(255, 200, 100, 0)`);
+
+    renderer.ctx.fillStyle = gradient;
+    renderer.ctx.beginPath();
+    renderer.ctx.arc(effect.x, effect.y, outerRadius, 0, Math.PI * 2);
+    renderer.ctx.fill();
+
+    // Inner bright core
+    renderer.ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.9})`;
+    renderer.ctx.beginPath();
+    renderer.ctx.arc(effect.x, effect.y, innerRadius * 0.3, 0, Math.PI * 2);
+    renderer.ctx.fill();
+
+    renderer.ctx.restore();
+  }
+
+  getScreenShake() {
+    return this.screenShake;
+  }
+
+  getAIThinking() {
+    return this.aiThinking;
   }
 }
 
@@ -701,10 +812,12 @@ export class OverlordGame {
   async tick() {
     if (this.state.dead) return;
     if (Date.now() < this.graceEndTime) return;
-    
+
     this.state.tick++;
-    
+
     try {
+      // Start AI thinking visual indicator
+      this.effects.setAIThinking(true, 0.5);
       this.callbacks.onAIStart(); // Indicate AI is thinking
 
       const startTime = Date.now();
@@ -713,11 +826,16 @@ export class OverlordGame {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(this.state.getRequestPayload())
       });
-      
+
       const rtt = Date.now() - startTime;
       const decision = await response.json();
       this.lastDecision = decision;
-      this.applyDecision(decision);
+
+      // Calculate AI confidence based on decision quality and response time
+      const aiConfidence = this.calculateAIConfidence(decision, rtt);
+      this.effects.setAIThinking(false, aiConfidence);
+
+      this.applyDecision(decision, aiConfidence);
 
       this.callbacks.onAIComplete(decision.source); // Indicate AI completed
       
@@ -822,13 +940,32 @@ export class OverlordGame {
       this.callbacks.onTaunt("The AI is watching...");
     }
   }
-  
-  applyDecision(decision) {
+
+  calculateAIConfidence(decision, rtt) {
+    let confidence = 0.5; // Base confidence
+
+    // Confidence based on response time (faster = more confident)
+    if (rtt < 200) confidence += 0.3;
+    else if (rtt < 400) confidence += 0.1;
+    else confidence -= 0.1;
+
+    // Confidence based on decision quality
+    if (decision.source === 'cerebras-hybrid') confidence += 0.2;
+    if (decision.params?.lanes && decision.params.lanes.length > 0) confidence += 0.1;
+    if (decision.explain && decision.explain.length > 20) confidence += 0.1;
+
+    // Confidence based on prediction specificity
+    if (decision.params?.lanes && decision.params.lanes.length === 1) confidence += 0.1;
+
+    return Math.max(0, Math.min(1, confidence));
+  }
+
+  applyDecision(decision, aiConfidence = 0.5) {
     if (!decision || !decision.decision) return;
     
     switch (decision.decision) {
       case 'spawn_bullets':
-        this.spawnBullets(decision.params);
+        this.spawnBullets(decision.params, aiConfidence);
         break;
       case 'slow_time':
         // Visual effect for slow time
@@ -846,7 +983,7 @@ export class OverlordGame {
     }
   }
   
-  spawnBullets(params) {
+  spawnBullets(params, aiConfidence = 0.5) {
     const count = params.count || 1;
     const lanes = params.lanes || [2];
     const dirs = params.dirs || [0];
@@ -859,7 +996,8 @@ export class OverlordGame {
       this.spawnBullet({
         lane: lane,
         dir: dirs[i] || 0,
-        speed: Math.max(0.5, Math.min(2.0, speed))
+        speed: Math.max(0.5, Math.min(2.0, speed)),
+        confidence: aiConfidence
       });
     }
 
@@ -884,7 +1022,8 @@ export class OverlordGame {
       speed: params.speed || 1.0,
       type: params.type || 'enemy',
       active: true,
-      rotation: 0
+      rotation: 0,
+      confidence: params.confidence || 0.5
     };
 
     this.state.bullets.push(bullet);
@@ -972,7 +1111,9 @@ export class OverlordGame {
             aiDecisionCaused: this.lastDecision
           };
 
-          this.onHit(collisionData);
+          // Add dramatic visual effects for mobile
+          this.effects.addScreenShake(8, 300);
+          this.effects.addParticles(bullet.x, bullet.y, 15, 'explosion');
           this.effects.add({
             type: 'explosion',
             x: playerX,
@@ -981,6 +1122,8 @@ export class OverlordGame {
             time: 0,
             duration: 0.5
           });
+
+          this.onHit(collisionData);
           return false;
         }
       }
@@ -1041,9 +1184,14 @@ export class OverlordGame {
   }
   
   render() {
+    // Apply screen shake effect
+    const shake = this.effects.getScreenShake();
+    this.ctx.save();
+    this.ctx.translate(shake.x, shake.y);
+
     // Clean dark background
     this.ctx.fillStyle = '#0f0f0f';
-    this.ctx.fillRect(0, 0, this.width, this.height);
+    this.ctx.fillRect(-shake.x, -shake.y, this.width + Math.abs(shake.x) * 2, this.height + Math.abs(shake.y) * 2);
     
     // Draw lanes
     this.ctx.strokeStyle = 'rgba(255, 0, 64, 0.2)';
@@ -1096,27 +1244,59 @@ export class OverlordGame {
       this.renderer.drawShape(overlordX + 8, overlordY - 5, 'circle', '#ff0000', 3);
     }
     
-    // Draw enemy bullets
+    // Draw enemy bullets with enhanced particle trails
     this.state.bullets.forEach(bullet => {
       this.ctx.save();
       this.ctx.translate(bullet.x, bullet.y);
       this.ctx.rotate(bullet.rotation);
 
-      // Bullet trail
-      const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 15);
-      gradient.addColorStop(0, 'rgba(255, 0, 64, 0.8)');
-      gradient.addColorStop(1, 'rgba(255, 0, 64, 0)');
-      this.ctx.fillStyle = gradient;
-      this.ctx.fillRect(-15, -15, 30, 30);
+      // Dynamic confidence-based glow
+      const confidence = bullet.confidence || 0.5;
+      const baseIntensity = 0.6 + confidence * 0.4;
+      const glowSize = 15 + confidence * 10;
 
-      // Bullet core
-      this.renderer.drawShape(0, 0, 'diamond', '#ff0040', 8, {
+      // Enhanced particle trail system
+      const trailGradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, glowSize);
+      trailGradient.addColorStop(0, `rgba(255, 0, 64, ${baseIntensity})`);
+      trailGradient.addColorStop(0.3, `rgba(255, 64, 128, ${baseIntensity * 0.6})`);
+      trailGradient.addColorStop(0.7, `rgba(255, 128, 192, ${baseIntensity * 0.3})`);
+      trailGradient.addColorStop(1, 'rgba(255, 200, 255, 0)');
+
+      this.ctx.fillStyle = trailGradient;
+      this.ctx.fillRect(-glowSize, -glowSize, glowSize * 2, glowSize * 2);
+
+      // Prediction confidence indicator (brighter = more confident)
+      const coreSize = 8 + confidence * 4;
+      const coreColor = `rgba(255, ${64 - confidence * 64}, ${64 - confidence * 64}, ${0.8 + confidence * 0.2})`;
+
+      this.renderer.drawShape(0, 0, 'diamond', coreColor, coreSize, {
         glow: true,
         glowColor: '#ff0040',
-        glowSize: 10
+        glowSize: 10 + confidence * 5
       });
 
+      // Add targeting precision indicators for high-confidence shots
+      if (confidence > 0.7) {
+        const time = Date.now() * 0.01;
+        for (let i = 0; i < 3; i++) {
+          const angle = (i * Math.PI * 2 / 3) + time;
+          const radius = 12 + Math.sin(time + i) * 3;
+          const px = Math.cos(angle) * radius;
+          const py = Math.sin(angle) * radius;
+
+          this.ctx.fillStyle = `rgba(255, 255, 255, ${confidence * 0.5})`;
+          this.ctx.beginPath();
+          this.ctx.arc(px, py, 1, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+      }
+
       this.ctx.restore();
+
+      // Spawn trailing particles for visual effect
+      if (Math.random() < 0.3) {
+        this.effects.addParticles(bullet.x, bullet.y, 1, 'bullet');
+      }
     });
 
     // Draw player bullets
@@ -1174,6 +1354,29 @@ export class OverlordGame {
     
     // Draw HUD elements
     this.drawHUD();
+
+    // Draw AI thinking indicators
+    const aiThinking = this.effects.getAIThinking();
+    if (aiThinking.active) {
+      const pulseAlpha = 0.3 + Math.sin(aiThinking.pulse) * 0.2;
+      const confidenceSize = 20 + aiThinking.confidence * 15;
+
+      // AI thinking pulse around the overlord
+      this.ctx.strokeStyle = `rgba(0, 255, 255, ${pulseAlpha})`;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      this.ctx.arc(this.width / 2, 50, confidenceSize, 0, Math.PI * 2);
+      this.ctx.stroke();
+
+      // Confidence visualization
+      this.ctx.fillStyle = `rgba(0, 255, 255, ${pulseAlpha * 0.5})`;
+      this.ctx.font = '12px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(`AI: ${Math.round(aiThinking.confidence * 100)}%`, this.width / 2, 90);
+    }
+
+    // Restore screen shake transform
+    this.ctx.restore();
   }
   
   drawProfessionalULTRATHINK(x, y) {

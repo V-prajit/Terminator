@@ -780,13 +780,25 @@ class DashboardController {
   }
 
   onAIDecision(decisionData) {
+    // Track latency metrics
+    if (decisionData.latency_ms) {
+      this.addLatencyMeasurement(decisionData.latency_ms);
+    }
+
+    // Simulate prediction accuracy tracking (in real system this would come from game result)
+    // For demo, we'll simulate 75-85% accuracy based on AI confidence
+    const simulatedAccuracy = 0.75 + (this.metricsTracker.aiConfidence * 0.1);
+    const wasCorrect = Math.random() < simulatedAccuracy;
+    this.addPredictionResult(wasCorrect);
+
     // Add to AI decisions panel
     this.addAIDecision({
       playerId: decisionData.playerId || 'system',
       decision: decisionData.decision,
       explain: decisionData.explain,
       lanes: decisionData.params?.lanes,
-      rtt: decisionData.latency_ms
+      rtt: decisionData.latency_ms,
+      confidence: this.metricsTracker.aiConfidence
     });
   }
 
@@ -987,13 +999,26 @@ class DashboardController {
     const decisionsContainer = document.getElementById('ai-decisions');
     const time = new Date().toLocaleTimeString();
 
+    // Color code based on latency
+    let latencyColor = '#00ff00'; // Green
+    if (decision.rtt > 300) latencyColor = '#ff0000'; // Red
+    else if (decision.rtt > 200) latencyColor = '#ffff00'; // Yellow
+
+    // Color code based on confidence
+    let confidenceColor = '#00ff00'; // Green
+    if (decision.confidence < 0.5) confidenceColor = '#ff0000'; // Red
+    else if (decision.confidence < 0.7) confidenceColor = '#ffff00'; // Yellow
+
     const decisionEl = document.createElement('div');
     decisionEl.className = 'decision-item';
     decisionEl.innerHTML = `
       <div class="decision-time">${time} - ${decision.playerId}</div>
       <div class="decision-action">${decision.decision}</div>
       <div class="decision-explanation">${decision.explain}</div>
-      ${decision.rtt ? `<div style="font-size: 10px; color: #666;">RTT: ${decision.rtt}ms</div>` : ''}
+      <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+        ${decision.rtt ? `<div style="font-size: 10px; color: ${latencyColor};">RTT: ${decision.rtt}ms</div>` : ''}
+        ${decision.confidence ? `<div style="font-size: 10px; color: ${confidenceColor};">Confidence: ${Math.round(decision.confidence * 100)}%</div>` : ''}
+      </div>
     `;
 
     decisionsContainer.insertBefore(decisionEl, decisionsContainer.firstChild);
@@ -1111,12 +1136,28 @@ class DashboardController {
       'Coordinated dual-player strike'
     ];
 
-    this.addAIDecision({
+    // Generate realistic latency values
+    const baseLatency = 150;
+    const variance = Math.random() * 200;
+    const latency = Math.round(baseLatency + variance);
+
+    // Generate confidence based on latency (better performance = higher confidence)
+    const confidence = Math.max(0.3, Math.min(0.95, 1 - (latency - 100) / 400));
+
+    const decision = {
       playerId: Math.random() < 0.5 ? 'player1' : 'player2',
       decision: decisions[Math.floor(Math.random() * decisions.length)],
       explain: explanations[Math.floor(Math.random() * explanations.length)],
       lanes: [Math.floor(Math.random() * 5)],
-      rtt: Math.floor(Math.random() * 300) + 50
+      rtt: latency,
+      confidence: confidence
+    };
+
+    // Process through the same pipeline as real AI decisions
+    this.onAIDecision({
+      ...decision,
+      latency_ms: latency,
+      params: { lanes: decision.lanes }
     });
   }
 
@@ -1139,6 +1180,18 @@ class DashboardController {
       lastTime: performance.now(),
       fps: 60
     };
+
+    // Enhanced metrics tracking
+    this.metricsTracker = {
+      latencies: [],
+      predictions: { total: 0, correct: 0 },
+      currentPhase: 'beginner',
+      aiEmotion: 'calculating',
+      aiConfidence: 0.5
+    };
+
+    // Start metrics update loop
+    this.startMetricsUpdating();
 
     // Monitor performance
     const updatePerformance = () => {
@@ -1182,6 +1235,177 @@ class DashboardController {
     });
 
     console.log('Demo mode controls: F1=Toggle demo effects, F2=Trigger transition, F3=Reset');
+  }
+
+  startMetricsUpdating() {
+    // Update metrics displays every 100ms for smooth animations
+    setInterval(() => {
+      this.updateLatencyGauge();
+      this.updateAccuracyGauge();
+      this.updateFPSGauge();
+      this.updatePhaseProgression();
+      this.updateAIPersonality();
+    }, 100);
+  }
+
+  updateLatencyGauge() {
+    const latencyGauge = document.getElementById('latency-gauge');
+    const latencyValue = document.getElementById('latency-value');
+
+    if (!latencyGauge || !latencyValue) return;
+
+    // Calculate average latency from recent measurements
+    const recentLatencies = this.metricsTracker.latencies.slice(-10);
+    const avgLatency = recentLatencies.length > 0
+      ? recentLatencies.reduce((a, b) => a + b, 0) / recentLatencies.length
+      : 0;
+
+    // Convert to gauge percentage (0-400ms range)
+    const percentage = Math.min(100, (avgLatency / 400) * 100);
+    const degrees = (percentage / 100) * 360;
+
+    latencyGauge.style.setProperty('--gauge-degrees', `${degrees}deg`);
+    latencyValue.textContent = `${Math.round(avgLatency)}ms`;
+
+    // Color coding: green < 200ms, yellow < 350ms, red >= 350ms
+    if (avgLatency < 200) {
+      latencyGauge.style.background = `conic-gradient(from 0deg, #00ff00 0deg, #00ff00 ${degrees}deg, #e0e0e0 ${degrees}deg, #e0e0e0 360deg)`;
+    } else if (avgLatency < 350) {
+      latencyGauge.style.background = `conic-gradient(from 0deg, #ffff00 0deg, #ffff00 ${degrees}deg, #e0e0e0 ${degrees}deg, #e0e0e0 360deg)`;
+    } else {
+      latencyGauge.style.background = `conic-gradient(from 0deg, #ff0000 0deg, #ff0000 ${degrees}deg, #e0e0e0 ${degrees}deg, #e0e0e0 360deg)`;
+    }
+  }
+
+  updateAccuracyGauge() {
+    const accuracyGauge = document.getElementById('accuracy-gauge');
+    const accuracyValue = document.getElementById('accuracy-value');
+
+    if (!accuracyGauge || !accuracyValue) return;
+
+    const accuracy = this.metricsTracker.predictions.total > 0
+      ? (this.metricsTracker.predictions.correct / this.metricsTracker.predictions.total) * 100
+      : 0;
+
+    const degrees = (accuracy / 100) * 360;
+    accuracyGauge.style.setProperty('--gauge-degrees', `${degrees}deg`);
+    accuracyValue.textContent = `${Math.round(accuracy)}%`;
+  }
+
+  updateFPSGauge() {
+    const fpsGauge = document.getElementById('fps-gauge');
+    const fpsValue = document.getElementById('fps-value');
+
+    if (!fpsGauge || !fpsValue) return;
+
+    const fps = this.performanceStats.fps;
+    const percentage = Math.min(100, (fps / 60) * 100);
+    const degrees = (percentage / 100) * 360;
+
+    fpsGauge.style.setProperty('--gauge-degrees', `${degrees}deg`);
+    fpsValue.textContent = fps.toString();
+  }
+
+  updatePhaseProgression() {
+    const phases = ['beginner', 'intermediate', 'expert'];
+    const currentPhaseText = document.getElementById('current-phase');
+    const survivalTimeText = document.getElementById('survival-time');
+
+    if (!currentPhaseText) return;
+
+    // Update phase based on survival time (simulate based on any connected player)
+    let maxSurvivalTime = 0;
+    this.players.forEach(player => {
+      if (player.stats && player.stats.time > maxSurvivalTime) {
+        maxSurvivalTime = player.stats.time;
+      }
+    });
+
+    let newPhase = 'beginner';
+    if (maxSurvivalTime >= 20) newPhase = 'expert';
+    else if (maxSurvivalTime >= 5) newPhase = 'intermediate';
+
+    this.metricsTracker.currentPhase = newPhase;
+    currentPhaseText.textContent = newPhase.charAt(0).toUpperCase() + newPhase.slice(1);
+
+    if (survivalTimeText) {
+      survivalTimeText.textContent = `${maxSurvivalTime.toFixed(1)}s`;
+    }
+
+    // Update phase indicators
+    phases.forEach((phase, index) => {
+      const phaseElement = document.getElementById(`phase-${phase}`);
+      if (!phaseElement) return;
+
+      phaseElement.classList.remove('active', 'completed');
+
+      if (index < phases.indexOf(newPhase)) {
+        phaseElement.classList.add('completed');
+      } else if (phase === newPhase) {
+        phaseElement.classList.add('active');
+      }
+    });
+  }
+
+  updateAIPersonality() {
+    const emotionIndicator = document.getElementById('ai-emotion-indicator');
+    const emotionText = document.getElementById('ai-emotion-text');
+    const confidenceText = document.getElementById('ai-confidence');
+
+    if (!emotionIndicator || !emotionText || !confidenceText) return;
+
+    // Update emotion classes
+    emotionIndicator.className = `emotion-indicator ${this.metricsTracker.aiEmotion}`;
+
+    // Update text based on emotion
+    const emotionTexts = {
+      calculating: 'Analyzing patterns...',
+      confident: 'High prediction accuracy',
+      aggressive: 'Overwhelming pressure mode',
+      frustrated: 'Adapting strategy...'
+    };
+
+    emotionText.textContent = emotionTexts[this.metricsTracker.aiEmotion] || 'Processing...';
+    confidenceText.textContent = `Confidence: ${Math.round(this.metricsTracker.aiConfidence * 100)}%`;
+  }
+
+  addLatencyMeasurement(latency) {
+    this.metricsTracker.latencies.push(latency);
+
+    // Keep only last 20 measurements
+    if (this.metricsTracker.latencies.length > 20) {
+      this.metricsTracker.latencies.shift();
+    }
+
+    // Update AI emotion based on performance
+    const avgLatency = this.metricsTracker.latencies.reduce((a, b) => a + b, 0) / this.metricsTracker.latencies.length;
+
+    if (avgLatency < 150) {
+      this.metricsTracker.aiEmotion = 'confident';
+      this.metricsTracker.aiConfidence = 0.9;
+    } else if (avgLatency < 300) {
+      this.metricsTracker.aiEmotion = 'calculating';
+      this.metricsTracker.aiConfidence = 0.7;
+    } else if (avgLatency < 500) {
+      this.metricsTracker.aiEmotion = 'aggressive';
+      this.metricsTracker.aiConfidence = 0.5;
+    } else {
+      this.metricsTracker.aiEmotion = 'frustrated';
+      this.metricsTracker.aiConfidence = 0.3;
+    }
+  }
+
+  addPredictionResult(wasCorrect) {
+    this.metricsTracker.predictions.total++;
+    if (wasCorrect) {
+      this.metricsTracker.predictions.correct++;
+    }
+
+    // Keep reasonable history
+    if (this.metricsTracker.predictions.total > 100) {
+      this.metricsTracker.predictions.total = 50;
+      this.metricsTracker.predictions.correct = Math.round(this.metricsTracker.predictions.correct * 0.5);
+    }
   }
 
   toggleDemoMode() {
