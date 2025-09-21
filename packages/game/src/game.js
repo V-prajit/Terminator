@@ -1,7 +1,7 @@
 // game.js - Fixed version
 // Core game engine with proper bullet targeting and telegraph timing
 
-const API_URL = new URLSearchParams(location.search).get('ai') || 'http://localhost:8787';
+const DEFAULT_API_URL = new URLSearchParams(location.search).get('ai') || 'http://localhost:8787';
 const TICK_MS = 700;
 const GRACE_MS = 1200;
 const INVULN_MS = 500;
@@ -584,8 +584,13 @@ export class OverlordGame {
       onTaunt: options.onTaunt || (() => {}),
       onDebug: options.onDebug || (() => {}),
       onUpdate: options.onUpdate || (() => {}),
+      onAIStart: options.onAIStart || (() => {}),
+      onAIComplete: options.onAIComplete || (() => {}),
       getPlayerInfo: options.getPlayerInfo || (() => null)
     };
+
+    // API endpoint (configurable for comparison demo)
+    this.apiUrl = options.apiEndpoint ? `${DEFAULT_API_URL}${options.apiEndpoint}` : `${DEFAULT_API_URL}/decide`;
 
     // Initialization will be called manually from external script
   }
@@ -700,8 +705,10 @@ export class OverlordGame {
     this.state.tick++;
     
     try {
+      this.callbacks.onAIStart(); // Indicate AI is thinking
+
       const startTime = Date.now();
-      const response = await fetch(`${API_URL}/decide`, {
+      const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(this.state.getRequestPayload())
@@ -711,6 +718,8 @@ export class OverlordGame {
       const decision = await response.json();
       this.lastDecision = decision;
       this.applyDecision(decision);
+
+      this.callbacks.onAIComplete(decision.source); // Indicate AI completed
       
       // Track prediction accuracy
       if (decision.params?.lanes) {
@@ -744,6 +753,7 @@ export class OverlordGame {
       
     } catch (err) {
       console.error('Decision error:', err);
+      this.callbacks.onAIComplete('error'); // Indicate AI error
     }
     
     // Taunt occasionally
@@ -786,7 +796,7 @@ export class OverlordGame {
         }
       };
 
-      const response = await fetch(`${API_URL}/taunt`, {
+      const response = await fetch(`${DEFAULT_API_URL}/taunt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tauntRequest)
@@ -927,10 +937,10 @@ export class OverlordGame {
     // Update boss (including animations)
     this.boss.update(dt);
 
-    // Boss shooting
-    if (this.boss.canShoot() && Math.random() < 0.02) { // 2% chance per frame
-      this.boss.shoot();
-    }
+    // Boss shooting (disabled for comparison demo)
+    // if (this.boss.canShoot() && Math.random() < 0.02) { // 2% chance per frame
+    //   this.boss.shoot();
+    // }
 
     // Update enemy bullets
     this.state.bullets = this.state.bullets.filter(bullet => {

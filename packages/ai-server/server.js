@@ -14,6 +14,11 @@ const MAX_TOKENS = Number(process.env.MAX_TOKENS || 256);
 const TOKENS_PER_MINUTE = Number(process.env.TOKENS_PER_MINUTE || 60000);
 const LIMIT_REQUESTS_DAY = Number(process.env.LIMIT_REQUESTS_DAY || 14400);
 
+// OpenRouter Config
+const OPENROUTER_BASE = (process.env.OPENROUTER_BASE || "https://openrouter.ai/api").trim();
+const OPENROUTER_MODEL = (process.env.OPENROUTER_MODEL || "openai/gpt-oss-120b").trim();
+const OPENROUTER_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS || 8000);
+
 // Read + sanitize API key
 const RAW_KEY = (process.env.CEREBRAS_API_KEY || process.env.CB_API_KEY || "").trim();
 if (!RAW_KEY) {
@@ -24,6 +29,10 @@ if (!RAW_KEY) {
   process.exit(1);
 }
 const CEREBRAS_API_KEY = RAW_KEY.replace(/\s+/g, ""); // strip accidental spaces/newlines
+
+// Read + sanitize OpenRouter API key
+const OPENROUTER_RAW_KEY = (process.env.OPENROUTER_API_KEY || "").trim();
+const OPENROUTER_API_KEY = OPENROUTER_RAW_KEY.replace(/\s+/g, "");
 
 // ─────────── Logging ───────────
 const log = (...a) => console.log(new Date().toISOString(), "-", ...a);
@@ -279,6 +288,58 @@ async function cerebrasChat(messages) {
   }
   clearTimeout(t);
   return { ok: false, error: String(lastErr || "Unknown error") };
+}
+
+// ─────────── OpenRouter call ───────────
+async function openrouterChat(messages) {
+  if (!OPENROUTER_API_KEY) {
+    return { ok: false, error: "OpenRouter API key not configured" };
+  }
+
+  const body = {
+    model: OPENROUTER_MODEL,
+    messages,
+    temperature: 0.2,
+    max_tokens: Math.max(32, Math.min(MAX_TOKENS, 2048)),
+    stream: false
+  };
+
+  const url = `${OPENROUTER_BASE}/v1/chat/completions`;
+  const abort = new AbortController();
+  const t = setTimeout(() => abort.abort(), OPENROUTER_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      signal: abort.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "HTTP-Referer": "http://localhost:8787",
+        "X-Title": "AI Overlord Speed Demo"
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      clearTimeout(t);
+      return { ok: false, error: `OpenRouter error ${res.status}: ${errorText.slice(0, 400)}` };
+    }
+
+    const data = await res.json();
+    clearTimeout(t);
+    return {
+      ok: true,
+      usage: data.usage || {},
+      content: data.choices?.[0]?.message?.content ?? "",
+      http_status: res.status
+    };
+  } catch (e) {
+    clearTimeout(t);
+    const error = e.name === "AbortError" ? new Error("OpenRouter timeout") : e;
+    return { ok: false, error: String(error) };
+  }
 }
 
 // ─────────── Dynamic Generic Taunt System ───────────
@@ -568,6 +629,58 @@ app.post("/decide", async (req, res) => {
 
   // Return immediate local response (AI failed or timed out)
   return res.status(200).json(localResponse);
+});
+
+// ─────────── OpenRouter Decision Endpoint ───────────
+app.post("/decide-openrouter", async (req, res) => {
+  const t0 = Date.now();
+  stats.total_requests++;
+  const payload = req.body || {};
+
+  try {
+    // PURE AI MODE: Only shoot when OpenRouter AI responds successfully
+    const upstream = await openrouterChat(buildMessages(payload));
+
+    if (upstream.ok) {
+      const aiResponse = safeParseDecision(upstream.content);
+
+      // Only return valid spawn_bullets decisions from AI
+      if (aiResponse.decision === "spawn_bullets" && aiResponse.params?.lanes) {
+        return res.status(200).json({
+          decision: aiResponse.decision,
+          params: aiResponse.params,
+          explain: aiResponse.explain,
+          source: "openrouter-gpt",
+          latency_ms: Date.now() - t0,
+          usage: upstream.usage,
+          model: OPENROUTER_MODEL
+        });
+      } else {
+        // AI didn't decide to spawn bullets - do nothing
+        return res.status(200).json({
+          decision: "no_op",
+          params: {},
+          explain: aiResponse.explain || "AI chose not to act",
+          source: "openrouter-no-action",
+          latency_ms: Date.now() - t0
+        });
+      }
+    } else {
+      throw new Error(upstream.error);
+    }
+  } catch (error) {
+    log("OpenRouter decision error:", error.message);
+
+    // NO LOCAL FALLBACK - Pure AI dependency
+    return res.status(200).json({
+      decision: "no_op",
+      params: {},
+      explain: "OpenRouter AI unavailable - no action taken",
+      source: "openrouter-failed",
+      latency_ms: Date.now() - t0,
+      error: error.message
+    });
+  }
 });
 
 // add near other routes
