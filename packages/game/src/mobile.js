@@ -234,6 +234,13 @@ async function initGame() {
   setupTouchControls();
   unlockAudioOnce();
 
+  // Initialize game with sprites
+  try {
+    await game.init?.();
+  } catch (error) {
+    console.error('Failed to initialize game sprites:', error);
+  }
+
   game.start?.();
   game.__started = true;
 }

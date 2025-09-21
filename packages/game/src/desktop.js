@@ -84,5 +84,16 @@ document.getElementById('retry-button').addEventListener('click', () => {
   game.restart();
 });
 
-// Start game
-game.start();
+// Initialize and start game
+async function initGame() {
+  try {
+    await game.init();
+    game.start();
+  } catch (error) {
+    console.error('Failed to initialize game:', error);
+    document.getElementById('taunt-footer').textContent = 'Game initialization error - sprites may not load';
+    game.start(); // Start anyway with fallback rendering
+  }
+}
+
+initGame();

@@ -1,7 +1,7 @@
 // game.js - Fixed version
 // Core game engine with proper bullet targeting and telegraph timing
 
-const API_URL = new URLSearchParams(location.search).get('ai') || '';
+const API_URL = new URLSearchParams(location.search).get('ai') || 'http://localhost:8787';
 const TICK_MS = 700;
 const GRACE_MS = 1200;
 const INVULN_MS = 500;
@@ -29,11 +29,79 @@ class EntityRegistry {
   }
 }
 
-// Render abstraction with shape rendering
+// Render abstraction with shape rendering and sprite support
 class RenderLayer {
   constructor(ctx) {
     this.ctx = ctx;
     this.sprites = new Map();
+    this.loadedImages = new Map();
+  }
+
+  async loadSprite(name, imagePath) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        this.loadedImages.set(name, img);
+        resolve(img);
+      };
+      img.onerror = reject;
+      img.src = imagePath;
+    });
+  }
+
+  drawSprite(name, x, y, width = null, height = null, options = {}) {
+    const img = this.loadedImages.get(name);
+    if (!img) return;
+
+    this.ctx.save();
+
+    if (options.alpha !== undefined) {
+      this.ctx.globalAlpha = options.alpha;
+    }
+
+    const drawWidth = width || img.width;
+    const drawHeight = height || img.height;
+
+    // Draw from center by default
+    const drawX = x - drawWidth / 2;
+    const drawY = y - drawHeight / 2;
+
+    if (options.rotation) {
+      this.ctx.translate(x, y);
+      this.ctx.rotate(options.rotation);
+      this.ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    } else {
+      this.ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+    }
+
+    this.ctx.restore();
+  }
+
+  drawSpriteFrame(name, x, y, frameX, frameY, frameWidth, frameHeight, drawWidth = null, drawHeight = null, options = {}) {
+    const img = this.loadedImages.get(name);
+    if (!img) return;
+
+    this.ctx.save();
+
+    if (options.alpha !== undefined) {
+      this.ctx.globalAlpha = options.alpha;
+    }
+
+    const dWidth = drawWidth || frameWidth;
+    const dHeight = drawHeight || frameHeight;
+
+    const drawX = x - dWidth / 2;
+    const drawY = y - dHeight / 2;
+
+    if (options.rotation) {
+      this.ctx.translate(x, y);
+      this.ctx.rotate(options.rotation);
+      this.ctx.drawImage(img, frameX, frameY, frameWidth, frameHeight, -dWidth / 2, -dHeight / 2, dWidth, dHeight);
+    } else {
+      this.ctx.drawImage(img, frameX, frameY, frameWidth, frameHeight, drawX, drawY, dWidth, dHeight);
+    }
+
+    this.ctx.restore();
   }
   
   drawShape(x, y, shape, color, size, options = {}) {
@@ -82,13 +150,6 @@ class RenderLayer {
     this.ctx.restore();
   }
   
-  drawTelegraph(x, y, width, height, alpha = 0.3) {
-    this.ctx.save();
-    this.ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
-    this.ctx.fillRect(x - width/2, y, width, height);
-    this.ctx.restore();
-  }
-  
   drawExplosion(x, y, radius, frame) {
     this.ctx.save();
     const alpha = Math.max(0, 1 - frame / 10);
@@ -106,25 +167,51 @@ class Animator {
     this.states = new Map();
     this.current = 'idle';
     this.frame = 0;
+    this.frameTimer = 0;
+    this.frameDelay = 6; // Medium speed animation - frames to wait before advancing
   }
-  
+
   setState(state) {
-    if (this.states.has(state)) {
+    if (this.states.has(state) && this.current !== state) {
       this.current = state;
       this.frame = 0;
+      this.frameTimer = 0;
     }
   }
-  
+
   register(state, frames) {
     this.states.set(state, frames);
   }
-  
+
   tick() {
-    this.frame++;
+    this.frameTimer++;
+    if (this.frameTimer >= this.frameDelay) {
+      this.frameTimer = 0;
+      const frames = this.states.get(this.current);
+      if (frames && frames.length > 0) {
+        this.frame = (this.frame + 1) % frames.length;
+      }
+    }
   }
-  
+
   getCurrentFrame() {
-    return this.frame;
+    const frames = this.states.get(this.current);
+    if (frames && frames.length > 0) {
+      return frames[this.frame];
+    }
+    return 0;
+  }
+
+  getCurrentSpriteFrame(frameWidth, frameHeight, framesPerRow) {
+    const frameIndex = this.getCurrentFrame();
+    const row = Math.floor(frameIndex / framesPerRow);
+    const col = frameIndex % framesPerRow;
+    return {
+      x: col * frameWidth,
+      y: row * frameHeight,
+      width: frameWidth,
+      height: frameHeight
+    };
   }
 }
 
@@ -198,9 +285,6 @@ class EffectsManager {
     this.effects.forEach(effect => {
       if (effect.type === 'explosion') {
         renderer.drawExplosion(effect.x, effect.y, effect.size, effect.time * 10);
-      } else if (effect.type === 'telegraph') {
-        const alpha = 0.3 * (1 - effect.time / effect.duration);
-        renderer.drawTelegraph(effect.x, effect.y, effect.width, effect.height, alpha);
       }
     });
   }
@@ -218,6 +302,45 @@ class Boss {
     this.lastMoveTime = 0;
     this.damageFlash = 0;
     this.shootCooldown = 0;
+    this.defeated = false;
+
+    // Animation system for overlord
+    this.animator = new Animator();
+    this.setupAnimations();
+
+    // Overlord sprite properties (ULTRATHINK sprite sheet)
+    // Try smaller frame dimensions - the sprite sheet might be arranged differently
+    // Let's try a more typical sprite sheet layout
+    this.spriteConfig = {
+      frameWidth: 128,  // Smaller frame width
+      frameHeight: 72,  // Smaller frame height
+      framesPerRow: 10  // 10 frames per row
+    };
+
+  }
+
+  setupAnimations() {
+    // Exact frame mapping from user: frames 1-96 = idle, frames 97-147 = death
+    // Converting to 0-based indexing: frames 0-95 = idle, frames 96-146 = death
+
+    // Generate idle frame sequence (use every 2nd frame for smoother but still active animation)
+    const idleFrames = [];
+    for (let i = 0; i < 96; i += 2) {
+      idleFrames.push(i);
+    }
+
+    // Generate death frame sequence (frames 96-146)
+    const deathFrames = [];
+    for (let i = 96; i < 147; i++) {
+      deathFrames.push(i);
+    }
+
+    this.animator.register('idle', idleFrames); // Every 2nd idle frame for animation
+    this.animator.register('attack', idleFrames.slice(0, 10)); // First 10 frames for attack
+    this.animator.register('damage', idleFrames.slice(10, 15)); // Frames for damage
+    this.animator.register('death', deathFrames); // Frames 96-146 (all death frames)
+    this.animator.setState('idle');
+
   }
 
   takeDamage(amount = 20) {
@@ -226,27 +349,45 @@ class Boss {
     this.health = Math.max(0, this.health - amount);
     this.damageFlash = 300; // Flash duration in ms
 
+    // Trigger damage animation
+    this.animator.setState('damage');
+
     if (this.health <= 0) {
-      this.active = false;
+      this.defeated = true;
+      this.animator.setState('death');
+      // Boss will become inactive after death animation completes
+      setTimeout(() => {
+        this.active = false;
+      }, 1000); // Allow death animation to play
       return true; // Boss defeated
     }
     return false;
   }
 
   update(dt) {
-    if (!this.active) return;
+    if (!this.active && !this.defeated) return;
+
+    // Update animations
+    this.animator.tick();
 
     // Reduce damage flash
     this.damageFlash = Math.max(0, this.damageFlash - dt * 1000);
 
+    // Return to idle after damage animation
+    if (this.animator.current === 'damage' && this.damageFlash <= 0 && !this.defeated) {
+      this.animator.setState('idle');
+    }
+
     // Reduce shoot cooldown
     this.shootCooldown = Math.max(0, this.shootCooldown - dt * 1000);
 
-    // Boss movement (change position occasionally)
-    const now = Date.now();
-    if (now - this.lastMoveTime > 3000 && Math.random() < 0.3) {
-      this.position = Math.floor(Math.random() * 3); // 0, 1, or 2
-      this.lastMoveTime = now;
+    // Boss movement (change position occasionally) - only if not defeated
+    if (!this.defeated) {
+      const now = Date.now();
+      if (now - this.lastMoveTime > 3000 && Math.random() < 0.3) {
+        this.position = Math.floor(Math.random() * 3); // 0, 1, or 2
+        this.lastMoveTime = now;
+      }
     }
   }
 
@@ -279,6 +420,9 @@ class Boss {
 
     this.shootCooldown = 1500; // 1.5 second cooldown
 
+    // Trigger attack animation
+    this.animator.setState('attack');
+
     // Boss shoots from multiple lanes more aggressively
     const targetLanes = this.getLanes();
     const playerLane = this.game.state.playerLane;
@@ -308,6 +452,13 @@ class Boss {
         type: 'enemy'
       });
     });
+
+    // Return to idle after a short delay
+    setTimeout(() => {
+      if (!this.defeated && this.animator.current === 'attack') {
+        this.animator.setState('idle');
+      }
+    }, 500);
   }
 
   checkCollision(x, y, radius = 10) {
@@ -435,10 +586,10 @@ export class OverlordGame {
       onUpdate: options.onUpdate || (() => {})
     };
 
-    this.init();
+    // Initialization will be called manually from external script
   }
   
-  init() {
+  async init() {
     // Initialize audio on first user interaction
     const initAudio = () => {
       this.sfx.init();
@@ -449,18 +600,29 @@ export class OverlordGame {
     document.addEventListener('click', initAudio);
     document.addEventListener('keydown', initAudio);
     document.addEventListener('touchstart', initAudio);
-    
+
+    // Load sprites
+    try {
+      await this.loadSprites();
+    } catch (error) {
+      console.warn('Could not load sprites:', error);
+    }
+
     // Register entity types
     this.entities.register('bullet', {
       spawn: (params) => this.spawnBullet(params)
     });
-    
-    // Animation states
+
+    // Animation states for player (simple animations)
     this.animator.register('idle', [0]);
     this.animator.register('moveLeft', [1]);
     this.animator.register('moveRight', [2]);
     this.animator.register('hit', [3]);
     this.animator.register('death', [4]);
+  }
+
+  async loadSprites() {
+    // No sprites needed for clean professional look
   }
   
   start() {
@@ -639,30 +801,18 @@ export class OverlordGame {
     const lanes = params.lanes || [2];
     const dirs = params.dirs || [0];
     const speed = params.speed || 1.0;
-    
+
     for (let i = 0; i < Math.min(count, lanes.length); i++) {
       const lane = Math.max(0, Math.min(4, lanes[i] ?? 2));
-      
-      // Telegraph warning - much shorter duration
-      const laneX = this.getLaneX(lane);
-      this.effects.add({
-        type: 'telegraph',
-        x: laneX,
-        y: 100,
-        width: 40,
-        height: this.height - 200,
-        time: 0,
-        duration: 0.2 // Reduced from 0.3
-      });
-      
-      // Spawn bullet immediately
+
+      // Spawn bullet immediately without telegraph warning
       this.spawnBullet({
         lane: lane,
         dir: dirs[i] || 0,
         speed: Math.max(0.5, Math.min(2.0, speed))
       });
     }
-    
+
     this.sfx.shoot();
   }
   
@@ -727,7 +877,7 @@ export class OverlordGame {
     // Update effects
     this.effects.update(dt);
 
-    // Update boss
+    // Update boss (including animations)
     this.boss.update(dt);
 
     // Boss shooting
@@ -815,19 +965,9 @@ export class OverlordGame {
   }
   
   render() {
-    // Clear canvas
-    this.ctx.fillStyle = '#0a0a0a';
+    // Clean dark background
+    this.ctx.fillStyle = '#0f0f0f';
     this.ctx.fillRect(0, 0, this.width, this.height);
-    
-    // Draw grid background
-    this.ctx.strokeStyle = 'rgba(0, 255, 255, 0.05)';
-    this.ctx.lineWidth = 1;
-    for (let y = 0; y < this.height; y += 40) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(0, y);
-      this.ctx.lineTo(this.width, y);
-      this.ctx.stroke();
-    }
     
     // Draw lanes
     this.ctx.strokeStyle = 'rgba(255, 0, 64, 0.2)';
@@ -851,51 +991,18 @@ export class OverlordGame {
     // Draw effects (telegraphs, explosions)
     this.effects.render(this.renderer);
 
-    // Draw boss
-    if (this.boss.active) {
-      const flashAlpha = this.boss.damageFlash > 0 ? 0.8 : 1.0;
-      const bossColor = this.boss.damageFlash > 0 ? '#ffffff' : '#ff00ff';
-
-      // Boss body (large rectangle spanning 3 lanes)
-      this.ctx.save();
-      this.ctx.globalAlpha = flashAlpha;
-      this.ctx.fillStyle = bossColor;
-      this.ctx.strokeStyle = bossColor;
-      this.ctx.lineWidth = 3;
-
+    // Draw boss/overlord
+    if (this.boss.active || this.boss.defeated) {
       const bossX = this.boss.getX();
       const bossY = this.boss.getY();
-      const bossWidth = this.boss.getWidth();
-      const bossHeight = this.boss.getHeight();
 
-      this.ctx.fillRect(bossX - bossWidth/2, bossY - bossHeight/2, bossWidth, bossHeight);
-      this.ctx.strokeRect(bossX - bossWidth/2, bossY - bossHeight/2, bossWidth, bossHeight);
+      // Draw professional ULTRATHINK AI overlord
+      this.drawProfessionalULTRATHINK(bossX, bossY);
 
-      // Boss eyes
-      this.ctx.fillStyle = '#ff0000';
-      this.ctx.fillRect(bossX - bossWidth/4, bossY - 10, 10, 10);
-      this.ctx.fillRect(bossX + bossWidth/4 - 10, bossY - 10, 10, 10);
-
-      // Boss health bar
-      const healthBarY = bossY - bossHeight/2 - 20;
-      const healthBarWidth = bossWidth;
-      const healthBarHeight = 8;
-      const healthPercent = this.boss.health / this.boss.maxHealth;
-
-      // Health bar background
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      this.ctx.fillRect(bossX - healthBarWidth/2, healthBarY, healthBarWidth, healthBarHeight);
-
-      // Health bar fill
-      this.ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
-      this.ctx.fillRect(bossX - healthBarWidth/2, healthBarY, healthBarWidth * healthPercent, healthBarHeight);
-
-      // Health bar border
-      this.ctx.strokeStyle = '#ffffff';
-      this.ctx.lineWidth = 1;
-      this.ctx.strokeRect(bossX - healthBarWidth/2, healthBarY, healthBarWidth, healthBarHeight);
-
-      this.ctx.restore();
+      // Professional AI health display
+      if (this.boss.active) {
+        this.drawProfessionalHealthBar(bossX, bossY - 130);
+      }
     } else {
       // Draw small overlord (original design) when no boss
       const overlordX = this.width / 2;
@@ -962,14 +1069,14 @@ export class OverlordGame {
     // Draw player
     const playerX = this.getLaneX(this.state.playerLane) + this.playerAnimOffset;
     const playerY = this.getLaneY();
-    
+
     // Player shield/aura when invulnerable
     if (Date.now() < this.invulnEndTime) {
       const pulseAlpha = 0.3 + Math.sin(Date.now() * 0.01) * 0.2;
       this.renderer.drawShape(playerX, playerY, 'circle', `rgba(0, 255, 255, ${pulseAlpha})`, 35);
     }
-    
-    // Player body
+
+    // Draw player (simple shape)
     this.renderer.drawShape(playerX, playerY, 'circle', '#00ff00', 15, {
       stroke: true,
       strokeColor: '#00ff00',
@@ -977,7 +1084,7 @@ export class OverlordGame {
       glowColor: '#00ff00',
       glowSize: 8
     });
-    
+
     // Player direction indicator
     if (this.playerAnimOffset !== 0) {
       const arrowX = playerX + (this.playerAnimOffset > 0 ? 10 : -10);
@@ -993,21 +1100,104 @@ export class OverlordGame {
     this.drawHUD();
   }
   
+  drawProfessionalULTRATHINK(x, y) {
+    const time = Date.now() * 0.003;
+    const flashAlpha = this.boss.damageFlash > 0 ? 0.8 : 1.0;
+    const isAttacking = this.boss.animator.current === 'attack';
+    const isDamaged = this.boss.damageFlash > 0;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = flashAlpha;
+
+    const size = 50;
+    const bodyColor = isDamaged ? '#ff4444' : (isAttacking ? '#ff00ff' : '#00ffff');
+
+    // Subtle glow ring
+    const ringSize = size + 15 + Math.sin(time) * 3;
+    this.ctx.strokeStyle = `rgba(0, 255, 255, 0.4)`;
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, ringSize, 0, Math.PI * 2);
+    this.ctx.stroke();
+
+    // Main hexagon body
+    this.ctx.fillStyle = bodyColor;
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+
+    for (let i = 0; i < 6; i++) {
+      const angle = (i * Math.PI) / 3 + time * 0.5;
+      const px = x + Math.cos(angle) * size;
+      const py = y + Math.sin(angle) * size;
+      if (i === 0) this.ctx.moveTo(px, py);
+      else this.ctx.lineTo(px, py);
+    }
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.stroke();
+
+    // Core
+    const coreSize = 15 + Math.sin(time * 3) * 3;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, coreSize, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Attack indicators
+    if (isAttacking) {
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI * 2) / 6 + time * 2;
+        const radius = size + 15;
+        const px = x + Math.cos(angle) * radius;
+        const py = y + Math.sin(angle) * radius;
+
+        this.ctx.fillStyle = '#ff00ff';
+        this.ctx.beginPath();
+        this.ctx.arc(px, py, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
+
+    this.ctx.restore();
+  }
+
+  drawProfessionalHealthBar(x, y) {
+    const healthPercent = this.boss.health / this.boss.maxHealth;
+    const barWidth = 160;
+    const barHeight = 6;
+
+    this.ctx.save();
+
+    // Health bar background
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    this.ctx.fillRect(x - barWidth/2, y, barWidth, barHeight);
+
+    // Health bar fill
+    this.ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
+    this.ctx.fillRect(x - barWidth/2, y, barWidth * healthPercent, barHeight);
+
+    this.ctx.restore();
+  }
+
   drawHUD() {
-    // Grace period indicator
+    // Clean minimal HUD
     if (Date.now() < this.graceEndTime) {
-      this.ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
-      this.ctx.font = '20px monospace';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.font = '18px monospace';
       this.ctx.textAlign = 'center';
       const remaining = Math.ceil((this.graceEndTime - Date.now()) / 1000);
-      this.ctx.fillText(`GRACE: ${remaining}s`, this.width / 2, 100);
+      this.ctx.fillText(`${remaining}`, this.width / 2, 100);
     }
-    
-    // Mode indicator
-    this.ctx.fillStyle = this.state.mode === 'aggressive' ? '#ff0040' : '#00ff40';
-    this.ctx.font = '14px monospace';
-    this.ctx.textAlign = 'right';
-    this.ctx.fillText(this.state.mode.toUpperCase(), this.width - 10, 20);
+
+    // Prediction accuracy (key metric for demo)
+    if (this.state.predictions > 0) {
+      const challengeRate = Math.round((this.state.challenges / this.state.predictions) * 100);
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.font = '14px monospace';
+      this.ctx.textAlign = 'left';
+      this.ctx.fillText(`Accuracy: ${challengeRate}%`, 10, 25);
+    }
   }
   
   onHit() {
