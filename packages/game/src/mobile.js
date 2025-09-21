@@ -197,6 +197,24 @@ function startGameIfNeeded() {
   }
 }
 
+// Start the game after name entry is complete
+function startGameAfterNameEntry() {
+  if (!game) {
+    console.warn('[mobile] Cannot start game - game not initialized');
+    return;
+  }
+  if (!game.__started) {
+    game.__started = true;
+    console.log('[mobile] Starting game after name entry completion');
+    game.start?.();
+  } else {
+    console.log('[mobile] Game already started');
+  }
+}
+
+// Make the function globally available
+window.startGameAfterNameEntry = startGameAfterNameEntry;
+
 function hookReadyBar() {
   const candidates = Array.from(document.querySelectorAll('button, .btn, [role="button"], .bar, .banner, .status, .cta, div, span'));
   const readyEl = candidates.find(el => (el.textContent || '').trim().toLowerCase().includes('ready to play'));
@@ -244,11 +262,28 @@ async function initGame() {
   // Function to record game session to player history
   async function recordGameToHistory(deathData) {
     try {
-      // Only record if we have player data (from multiplayer mode)
+      // Get player info from either multiplayer or single-player
+      let playerId, playerName;
+
       const connectionInfo = multiplayerClient?.getConnectionInfo();
-      if (!connectionInfo || !connectionInfo.playerId) {
-        console.log('[mobile] No player ID available, skipping history recording');
-        return;
+      console.log('[mobile] Connection info:', connectionInfo);
+
+      if (connectionInfo && connectionInfo.playerId) {
+        // Multiplayer mode
+        playerId = connectionInfo.playerId;
+        playerName = connectionInfo.playerName;
+        console.log('[mobile] Recording multiplayer game for:', playerName, playerId);
+      } else {
+        // Single-player mode - use game state player ID and name from multiplayer client
+        if (game && game.state && game.state.playerId) {
+          playerId = game.state.playerId;
+          // Use the name from multiplayer client if available, otherwise default
+          playerName = connectionInfo?.playerName || multiplayerClient?.playerName || 'Player';
+          console.log('[mobile] Recording single-player game for:', playerName, playerId);
+        } else {
+          console.log('[mobile] No player ID available, skipping history recording');
+          return;
+        }
       }
 
       // Prepare game data for history recording
@@ -262,18 +297,35 @@ async function initGame() {
         finalScore: deathData.finalScore || deathData.time,
         collisionData: deathData.collisionData,
         aiDecisions: deathData.lastAiDecision ? [deathData.lastAiDecision] : [],
-        playerName: connectionInfo.playerName
+        playerName: playerName
       };
 
       const payload = {
-        playerId: connectionInfo.playerId,
-        playerName: connectionInfo.playerName,
+        playerId: playerId,
+        playerName: playerName,
         gameData: gameData
       };
 
       console.log('[mobile] Recording game session:', payload);
 
-      const response = await fetch('/record-game', {
+      // Determine the correct AI server URL
+      let serverUrl;
+      if (window.location.host.includes('ngrok') || !window.location.host.includes(':')) {
+        // Production/ngrok mode - use localhost AI server directly
+        serverUrl = 'http://localhost:8787';
+      } else if (window.location.host.includes(':')) {
+        // Local development mode - use localhost AI server
+        const [hostname] = window.location.host.split(':');
+        serverUrl = `http://${hostname}:8787`;
+      } else {
+        // Fallback - use relative path
+        serverUrl = '';
+      }
+
+      const recordUrl = serverUrl ? `${serverUrl}/record-game` : '/record-game';
+      console.log('[mobile] Recording to URL:', recordUrl);
+
+      const response = await fetch(recordUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -319,9 +371,15 @@ async function initGame() {
   game = new OverlordGameCtor(canvas, {
     // Player info provider for personalized taunts
     getPlayerInfo: () => {
-      if (multiplayerClient?.isInMultiplayerMode()) {
-        return multiplayerClient.getConnectionInfo();
+      const isMultiplayer = multiplayerClient?.isInMultiplayerMode();
+      console.log('[mobile] getPlayerInfo called - isMultiplayer:', isMultiplayer);
+
+      if (isMultiplayer) {
+        const info = multiplayerClient.getConnectionInfo();
+        console.log('[mobile] getPlayerInfo returning:', info);
+        return info;
       }
+      console.log('[mobile] getPlayerInfo returning null (not multiplayer)');
       return null;
     },
 
@@ -427,8 +485,8 @@ async function initGame() {
     console.error('Failed to initialize game sprites:', error);
   }
 
-  game.start?.();
-  game.__started = true;
+  // Don't start game immediately - wait for name entry completion
+  console.log('[mobile] Game initialized, waiting for name entry completion');
 }
 
 // ---- Boot ----

@@ -115,6 +115,11 @@ export class MultiplayerClient {
       // Hide modal
       modal.classList.remove('show');
 
+      // Start the game now that name entry is complete
+      if (window.startGameAfterNameEntry) {
+        window.startGameAfterNameEntry();
+      }
+
       // Show multiplayer UI and connect
       this.showMultiplayerUI();
       setTimeout(() => {

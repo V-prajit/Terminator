@@ -250,11 +250,11 @@ class PlayerHistoryManager {
   }
 
   // Get taunt context for AI
-  async getTauntContext(playerId) {
+  async getTauntContext(playerId, playerName = 'Player') {
     const history = await this.loadPlayerHistory(playerId);
 
     return {
-      playerName: history.playerName || 'Player',
+      playerName: history.playerName || playerName,
       skillLevel: history.personalityProfile.skillLevel,
       recentPerformance: {
         lastGame: history.recentGames[0] || null,

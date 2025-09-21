@@ -281,6 +281,58 @@ async function cerebrasChat(messages) {
   return { ok: false, error: String(lastErr || "Unknown error") };
 }
 
+// ─────────── Dynamic Generic Taunt System ───────────
+let lastTauntTime = 0;
+let currentTauntIndex = 0;
+
+const genericTauntTemplates = [
+    "{playerName}, the AI is analyzing your patterns...",
+    "Welcome to the arena, {playerName}. I've been waiting.",
+    "{playerName}, your movements will be... predictable.",
+    "Round {roundNumber}? The AI remembers everything.",
+    "{playerName}, I'm calculating your next mistake.",
+    "The Overlord sees all, {playerName}. Especially your weaknesses.",
+    "{playerName}, prepare for adaptive difficulty.",
+    "Your neural patterns are... fascinating, {playerName}.",
+    "{playerName}, I'm learning faster than you're improving.",
+    "Round {roundNumber}. The AI's prediction engine is warming up.",
+    "{playerName}, your reflexes are being measured.",
+    "Every move teaches me more about you, {playerName}.",
+    "{playerName}, the machine learning has begun.",
+    "Welcome back, {playerName}. My algorithms have evolved.",
+    "{playerName}, I'm processing your behavioral matrix.",
+    "The AI Overlord has studied your patterns, {playerName}.",
+    "{playerName}, resistance is... statistically improbable.",
+    "Round {roundNumber}. Initializing advanced targeting systems.",
+    "{playerName}, your muscle memory is being decoded.",
+    "The neural network is hungry for data, {playerName}.",
+    "{playerName}, I'm optimizing specifically for your playstyle.",
+    "Your movement algorithms are loading, {playerName}...",
+    "{playerName}, the AI is calibrating to your skill level.",
+    "Round {roundNumber}. Engaging predictive combat protocols.",
+    "{playerName}, I'm mapping your decision trees.",
+    "The machine sees patterns you don't even know you have, {playerName}.",
+    "{playerName}, your training data is being analyzed.",
+    "Adaptive AI engaged. Good luck, {playerName}.",
+    "{playerName}, I'm learning your tells in real-time.",
+    "The Overlord's algorithms are personalizing just for you, {playerName}."
+];
+
+function generateDynamicGenericTaunt(playerName, roundNumber) {
+  const now = Date.now();
+
+  // Rotate taunts every 5 seconds (5000ms)
+  if (now - lastTauntTime > 5000) {
+    lastTauntTime = now;
+    currentTauntIndex = (currentTauntIndex + 1) % genericTauntTemplates.length;
+  }
+
+  const template = genericTauntTemplates[currentTauntIndex];
+  return template
+    .replace(/\{playerName\}/g, playerName)
+    .replace(/\{roundNumber\}/g, roundNumber);
+}
+
 // ─────────── Personalized Taunt Generation ───────────
 async function generatePersonalizedTaunt(tauntContext, context = {}) {
   try {
@@ -377,7 +429,7 @@ async function generatePersonalizedTaunt(tauntContext, context = {}) {
         .replace(/[.!?]+$/, '') // Remove excessive end punctuation
         .slice(0, 80); // Ensure reasonable length
 
-      return cleanTaunt || `${playerName}, ready for round ${recentPerformance.gamesPlayed + 1}?`;
+      return cleanTaunt || generateDynamicGenericTaunt(playerName, recentPerformance.gamesPlayed + 1);
 
     } catch (error) {
       clearTimeout(t);
@@ -542,7 +594,19 @@ app.post('/taunt', async (req, res) => {
     }
 
     // Get player history context for personalized taunt
-    const tauntContext = await playerHistory.getTauntContext(playerId);
+    const tauntContext = await playerHistory.getTauntContext(playerId, playerName);
+
+    // Check if player has enough games for personalized AI taunts (minimum 3 games)
+    if (tauntContext.recentPerformance.gamesPlayed < 3) {
+      const genericTaunt = generateDynamicGenericTaunt(tauntContext.playerName, tauntContext.recentPerformance.gamesPlayed + 1);
+
+      res.json({
+        message: genericTaunt,
+        type: 'generic_dynamic',
+        playerName: tauntContext.playerName
+      });
+      return;
+    }
 
     // Generate personalized taunt using AI
     const personalizedTaunt = await generatePersonalizedTaunt(tauntContext, context);
