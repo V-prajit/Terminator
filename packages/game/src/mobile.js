@@ -241,8 +241,61 @@ async function initGame() {
     MultiplayerClientCtor = mod.MultiplayerClient;
   }
 
+  // Function to record game session to player history
+  async function recordGameToHistory(deathData) {
+    try {
+      // Only record if we have player data (from multiplayer mode)
+      const connectionInfo = multiplayerClient?.getConnectionInfo();
+      if (!connectionInfo || !connectionInfo.playerId) {
+        console.log('[mobile] No player ID available, skipping history recording');
+        return;
+      }
+
+      // Prepare game data for history recording
+      const gameData = {
+        survivalTime: deathData.time,
+        deathCause: deathData.deathCause || 'unknown',
+        deathLane: deathData.deathLane || -1,
+        movementPattern: deathData.movementPattern || [],
+        gamePhase: deathData.gamePhase || 'unknown',
+        bulletCount: deathData.bulletCount || 1,
+        finalScore: deathData.finalScore || deathData.time,
+        collisionData: deathData.collisionData,
+        aiDecisions: deathData.lastAiDecision ? [deathData.lastAiDecision] : [],
+        playerName: connectionInfo.playerName
+      };
+
+      const payload = {
+        playerId: connectionInfo.playerId,
+        playerName: connectionInfo.playerName,
+        gameData: gameData
+      };
+
+      console.log('[mobile] Recording game session:', payload);
+
+      const response = await fetch('/record-game', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('[mobile] Game session recorded successfully:', result.playerSummary);
+      } else {
+        console.error('[mobile] Failed to record game session:', response.status);
+      }
+    } catch (error) {
+      console.error('[mobile] Error recording game session:', error);
+    }
+  }
+
   // Initialize multiplayer client
   multiplayerClient = new MultiplayerClientCtor();
+
+  // Throttling for WebSocket updates
+  let lastMultiplayerUpdate = 0;
+  const MULTIPLAYER_UPDATE_INTERVAL = 500; // 500ms = 2 updates per second max
 
   // Set up multiplayer callbacks
   multiplayerClient.setCallbacks({
@@ -264,6 +317,14 @@ async function initGame() {
   console.log('[mobile] init OverlordGame', { backing: [canvas.width, canvas.height], DPR });
 
   game = new OverlordGameCtor(canvas, {
+    // Player info provider for personalized taunts
+    getPlayerInfo: () => {
+      if (multiplayerClient?.isInMultiplayerMode()) {
+        return multiplayerClient.getConnectionInfo();
+      }
+      return null;
+    },
+
     onDeath: (data) => {
       document.getElementById('final-time').textContent = data.time.toFixed(1);
       document.getElementById('final-best').textContent = data.best.toFixed(1);
@@ -277,6 +338,9 @@ async function initGame() {
           bestTime: data.best
         });
       }
+
+      // Record game session to player history (for both single and multiplayer)
+      recordGameToHistory(data);
     },
     onWin: (data) => {
       // Show win modal
@@ -313,13 +377,12 @@ async function initGame() {
       document.getElementById('survival-time').textContent = data.time.toFixed(1) + 's';
       document.getElementById('best-time').textContent     = data.best.toFixed(1) + 's';
 
-      console.log('[Mobile] 🎮 onUpdate called - time:', data.time, 'multiplayer:', multiplayerClient?.isInMultiplayerMode());
+      // Throttle multiplayer updates to prevent spam
+      const now = Date.now();
+      if (multiplayerClient?.isInMultiplayerMode() && (now - lastMultiplayerUpdate) >= MULTIPLAYER_UPDATE_INTERVAL) {
+        lastMultiplayerUpdate = now;
 
-      // Send periodic updates to multiplayer including full game state
-      if (multiplayerClient?.isInMultiplayerMode()) {
-        console.log('[Mobile] 📊 In multiplayer mode, sending updates...');
-
-        // Basic stats update
+        // Basic stats update (throttled)
         multiplayerClient.sendPlayerUpdate({
           time: data.time,
           best: data.best,
@@ -327,7 +390,7 @@ async function initGame() {
           ammo: data.ammo
         });
 
-        // Full game state for real-time mirroring
+        // Full game state for real-time mirroring (throttled)
         if (game.state) {
           const gameStateData = {
             playerPosition: {
@@ -342,13 +405,8 @@ async function initGame() {
             phase: game.state.phase || 'beginner'
           };
 
-          console.log('[Mobile] 🚀 Sending game state with', gameStateData.bullets.length, 'bullets, player at lane', gameStateData.playerPosition.lane);
           multiplayerClient.sendGameState(gameStateData);
-        } else {
-          console.warn('[Mobile] ❌ No game.state available for streaming');
         }
-      } else {
-        console.log('[Mobile] ❌ Not in multiplayer mode, skipping game state');
       }
     }
   });

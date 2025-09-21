@@ -3,6 +3,7 @@ import "dotenv/config";            // <-- loads .env automatically
 import http from "http";
 import express from "express";
 import WebSocketManager from "./websocket-manager.js";
+import PlayerHistoryManager from "./player-history.js";
 
 // ─────────── Config ───────────
 const PORT = process.env.PORT || 8787;
@@ -280,8 +281,164 @@ async function cerebrasChat(messages) {
   return { ok: false, error: String(lastErr || "Unknown error") };
 }
 
+// ─────────── Personalized Taunt Generation ───────────
+async function generatePersonalizedTaunt(tauntContext, context = {}) {
+  try {
+    const { playerName, skillLevel, recentPerformance, patterns, tauntStyle, frustrationLevel } = tauntContext;
+
+    // Build system prompt for taunt generation
+    const systemPrompt = [
+      "You are an AI overlord that generates witty, personalized taunts for players in a dodge-the-bullets game.",
+      "Your taunts should be clever, playful, and reference specific player behaviors, but never mean-spirited or offensive.",
+      "",
+      "TAUNT STYLE GUIDELINES:",
+      `- Player's preferred style: ${tauntStyle}`,
+      `- Player's frustration level: ${frustrationLevel}`,
+      `- Skill level: ${skillLevel}`,
+      "",
+      "TONE RULES:",
+      "- If frustrationLevel is 'high': Be encouraging but still playful",
+      "- If skillLevel is 'beginner': Be gentle and encouraging",
+      "- If skillLevel is 'advanced': Be more competitive and challenging",
+      "- If tauntStyle is 'playful': Focus on humor and fun observations",
+      "- If tauntStyle is 'competitive': Focus on challenge and improvement",
+      "- If tauntStyle is 'encouraging': Focus on positive motivation",
+      "",
+      "RESPONSE FORMAT:",
+      "- Return ONLY the taunt message (no quotes, no extra text)",
+      "- Keep it under 60 characters",
+      "- Make it specific to this player's patterns when possible",
+      "- Use the player's name occasionally but not always"
+    ].join("\n");
+
+    // Build user prompt with player context
+    const playerContext = [
+      `Player: ${playerName}`,
+      `Games played: ${recentPerformance.gamesPlayed}`,
+      `Best time: ${recentPerformance.bestTime.toFixed(1)}s`,
+      `Average time: ${recentPerformance.averageTime.toFixed(1)}s`,
+      `Recent trend: ${recentPerformance.improvementTrend}`,
+      `Most dangerous lane: ${patterns.dangerousLane}`,
+      "",
+      "Recent failure patterns:",
+      ...patterns.commonFailures.slice(0, 3).map(([pattern, count]) => `- ${pattern}: ${count} times`),
+      "",
+      "Repeated mistakes:",
+      ...patterns.repeatedMistakes.slice(0, 2).map(mistake => `- ${mistake}`),
+      "",
+      "Movement habits:",
+      ...Object.entries(patterns.movementHabits).map(([habit, value]) => `- ${habit}: ${value}`),
+      "",
+      "Generate a witty, personalized taunt based on this player's patterns and performance."
+    ].join("\n");
+
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: playerContext }
+    ];
+
+    // Use reduced max_tokens for short taunts
+    const originalMaxTokens = MAX_TOKENS;
+    const tauntMaxTokens = 32; // Short taunts only
+
+    // Temporarily override max tokens for this request
+    const body = {
+      model: MODEL,
+      messages,
+      temperature: 0.8, // Higher temperature for more creative taunts
+      max_tokens: tauntMaxTokens,
+      stream: false
+    };
+
+    const url = `${CEREBRAS_BASE}/v1/chat/completions`;
+    const abort = new AbortController();
+    const t = setTimeout(() => abort.abort(), 3000); // Shorter timeout for taunts
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        signal: abort.signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${CEREBRAS_API_KEY}` },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        throw new Error(`AI request failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const aiTaunt = data.choices?.[0]?.message?.content?.trim() || "";
+
+      clearTimeout(t);
+
+      // Clean up the taunt (remove quotes, excessive punctuation)
+      const cleanTaunt = aiTaunt
+        .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+        .replace(/[.!?]+$/, '') // Remove excessive end punctuation
+        .slice(0, 80); // Ensure reasonable length
+
+      return cleanTaunt || `${playerName}, ready for round ${recentPerformance.gamesPlayed + 1}?`;
+
+    } catch (error) {
+      clearTimeout(t);
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('Failed to generate AI taunt:', error);
+
+    // Fallback to context-aware preset taunts
+    const contextualTaunts = getContextualFallbackTaunts(tauntContext);
+    return contextualTaunts[Math.floor(Math.random() * contextualTaunts.length)];
+  }
+}
+
+// Fallback taunts based on player context
+function getContextualFallbackTaunts(tauntContext) {
+  const { playerName, skillLevel, recentPerformance, frustrationLevel } = tauntContext;
+
+  if (frustrationLevel === 'high') {
+    return [
+      `${playerName}, every expert was once a beginner.`,
+      "Practice makes perfect, keep trying!",
+      "The AI is tough, but you're tougher.",
+      "Don't give up, you're improving!"
+    ];
+  }
+
+  if (skillLevel === 'beginner') {
+    return [
+      `Welcome to the arena, ${playerName}!`,
+      "Learning the ropes? The AI will teach you.",
+      "Every expert was once a beginner.",
+      "Nice try! Ready for another round?"
+    ];
+  }
+
+  if (skillLevel === 'advanced') {
+    return [
+      `${playerName}, the AI expected better.`,
+      "Is that your best time? Really?",
+      "The AI is just getting warmed up.",
+      "Predictable moves, predictable outcome."
+    ];
+  }
+
+  // Default taunts
+  return [
+    `${playerName}, the AI is watching...`,
+    "Ready to try again?",
+    "The AI learns from every move.",
+    "Can you beat your best time?"
+  ];
+}
+
 // ─────────── Stats ───────────
 const stats = { started_at: new Date().toISOString(), total_requests: 0, model_used: MODEL };
+
+// ─────────── Player History Manager ───────────
+const playerHistory = new PlayerHistoryManager();
+
 function localRateLimitView() {
   refillBucket();
   const resetSecs = Math.max(0, 60000 - (Date.now() - bucket.lastRefill)) / 1000;
@@ -362,14 +519,101 @@ app.post("/decide", async (req, res) => {
 });
 
 // add near other routes
-app.post('/taunt', (req, res) => {
-  const lines = [
-    "You move like dial-up.",
-    "I've seen faster lanes on a Monday.",
-    "Predictable. Again.",
-    "Left? Right? Wrong."
-  ];
-  res.json({ message: lines[Math.floor(Math.random()*lines.length)] });
+// AI-powered personalized taunt endpoint
+app.post('/taunt', async (req, res) => {
+  try {
+    const { playerId, playerName, context } = req.body;
+
+    // Fallback to preset taunts if no player ID
+    const fallbackTaunts = [
+      "You move like dial-up.",
+      "I've seen faster lanes on a Monday.",
+      "Predictable. Again.",
+      "Left? Right? Wrong.",
+      "The AI is learning your patterns...",
+      "Ready to try again?"
+    ];
+
+    if (!playerId) {
+      return res.json({
+        message: fallbackTaunts[Math.floor(Math.random() * fallbackTaunts.length)],
+        type: 'fallback'
+      });
+    }
+
+    // Get player history context for personalized taunt
+    const tauntContext = await playerHistory.getTauntContext(playerId);
+
+    // Generate personalized taunt using AI
+    const personalizedTaunt = await generatePersonalizedTaunt(tauntContext, context);
+
+    res.json({
+      message: personalizedTaunt,
+      type: 'personalized',
+      playerName: tauntContext.playerName
+    });
+
+  } catch (error) {
+    console.error('Failed to generate personalized taunt:', error);
+
+    // Fallback to preset taunts on error
+    const fallbackTaunts = [
+      "You move like dial-up.",
+      "I've seen faster lanes on a Monday.",
+      "Predictable. Again.",
+      "Left? Right? Wrong."
+    ];
+
+    res.json({
+      message: fallbackTaunts[Math.floor(Math.random() * fallbackTaunts.length)],
+      type: 'fallback_error'
+    });
+  }
+});
+
+// Record game session for player history
+app.post('/record-game', async (req, res) => {
+  try {
+    const { playerId, playerName, gameData } = req.body;
+
+    if (!playerId) {
+      return res.status(400).json({ error: 'playerId is required' });
+    }
+
+    // Add player name to game data if provided
+    const enrichedGameData = {
+      ...gameData,
+      playerName: playerName || gameData.playerName
+    };
+
+    const updatedHistory = await playerHistory.recordGameSession(playerId, enrichedGameData);
+
+    res.json({
+      success: true,
+      message: 'Game session recorded',
+      playerSummary: {
+        totalGames: updatedHistory.totalGames,
+        bestTime: updatedHistory.stats.bestTime,
+        averageTime: updatedHistory.stats.averageSurvivalTime,
+        skillLevel: updatedHistory.personalityProfile.skillLevel
+      }
+    });
+  } catch (error) {
+    console.error('Failed to record game session:', error);
+    res.status(500).json({ error: 'Failed to record game session' });
+  }
+});
+
+// Get player history summary (for debugging)
+app.get('/player-summary/:playerId', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const summary = await playerHistory.getPlayerSummary(playerId);
+    res.json({ success: true, summary });
+  } catch (error) {
+    console.error('Failed to get player summary:', error);
+    res.status(500).json({ error: 'Failed to get player summary' });
+  }
 });
 
 // ─────────── Dual-Player AI Functions ───────────

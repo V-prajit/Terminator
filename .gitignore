@@ -9,3 +9,4 @@ packages/ai-server/ai-server.log
 packages/ai-server/demo-server.log
 packages/ai-server/ngrok.log
 packages/ai-server/demo-qr.png
+ngrok.log

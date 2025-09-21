@@ -1,0 +1,53 @@
+{
+  "playerId": "player_test123",
+  "playerName": "TestPlayer",
+  "createdAt": 1758434874176,
+  "lastPlayed": 1758434874176,
+  "totalGames": 1,
+  "totalDeaths": 0,
+  "stats": {
+    "bestTime": 12.5,
+    "averageSurvivalTime": 12.5,
+    "totalSurvivalTime": 12.5,
+    "improvementTrend": "new",
+    "favoriteStartingLane": 2,
+    "mostDangerousLane": 2
+  },
+  "patterns": {
+    "commonDeathCauses": {
+      "bullet_collision_lane_2": 1
+    },
+    "movementHabits": {
+      "leftFirstTendency": 0.1
+    },
+    "timeBasedFailures": {
+      "5_to_15s": 1
+    },
+    "repeatedMistakes": [],
+    "sessionPatterns": {}
+  },
+  "recentGames": [
+    {
+      "gameId": 1758434874176,
+      "timestamp": 1758434874176,
+      "survivalTime": 12.5,
+      "deathCause": "bullet_collision",
+      "deathLane": 2,
+      "movementPattern": [
+        "left",
+        "right",
+        "left"
+      ],
+      "aiDecisions": [],
+      "bulletCount": 2,
+      "gamePhase": "intermediate",
+      "finalScore": 12.5
+    }
+  ],
+  "personalityProfile": {
+    "skillLevel": "intermediate",
+    "frustrationLevel": "low",
+    "competitiveness": "medium",
+    "preferredTauntStyle": "playful"
+  }
+}

@@ -1,9 +1,14 @@
 // multiplayer-client.js - Mobile client multiplayer support
+import PlayerAuth from './player-auth.js';
+
 export class MultiplayerClient {
   constructor() {
     this.websocket = null;
     this.isConnected = false;
-    this.playerId = this.generatePlayerId();
+    this.playerAuth = new PlayerAuth();
+    this.playerData = null;
+    this.playerId = null;
+    this.playerName = null;
     this.roomId = null;
     this.isMultiplayer = false;
 
@@ -27,13 +32,98 @@ export class MultiplayerClient {
       this.isMultiplayer = true;
       console.log('Multiplayer mode detected, room:', roomId);
 
-      // Show multiplayer UI indicators
-      this.showMultiplayerUI();
+      // Check if player already exists
+      const existingPlayer = this.playerAuth.getExistingPlayer();
+      if (existingPlayer) {
+        // Use existing player data
+        this.playerData = existingPlayer;
+        this.playerId = existingPlayer.id;
+        this.playerName = existingPlayer.name;
+        this.playerAuth.updateLastPlayed();
+        console.log('Returning player:', this.playerName);
 
-      // Auto-connect when room is specified
+        // Show multiplayer UI and connect
+        this.showMultiplayerUI();
+        setTimeout(() => {
+          this.connect();
+        }, 1000);
+      } else {
+        // Show name entry modal for new players
+        this.showNameEntryModal();
+      }
+    }
+  }
+
+  showNameEntryModal() {
+    const modal = document.getElementById('name-entry-modal');
+    const input = document.getElementById('player-name-input');
+    const joinBtn = document.getElementById('join-arena-btn');
+
+    if (!modal || !input || !joinBtn) {
+      console.error('Name entry modal elements not found');
+      return;
+    }
+
+    // Show the modal
+    modal.classList.add('show');
+
+    // Focus the input
+    input.focus();
+
+    // Handle input validation
+    const validateInput = () => {
+      const name = input.value.trim();
+      const isValid = this.playerAuth.isValidPlayerName(name);
+      joinBtn.disabled = !isValid;
+      return isValid;
+    };
+
+    // Real-time validation
+    input.addEventListener('input', validateInput);
+
+    // Handle Enter key
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && validateInput()) {
+        this.handleNameSubmission();
+      }
+    });
+
+    // Handle join button click
+    joinBtn.addEventListener('click', () => {
+      if (validateInput()) {
+        this.handleNameSubmission();
+      }
+    });
+
+    // Initial validation
+    validateInput();
+  }
+
+  handleNameSubmission() {
+    const input = document.getElementById('player-name-input');
+    const modal = document.getElementById('name-entry-modal');
+    const playerName = input.value.trim();
+
+    try {
+      // Create player data
+      this.playerData = this.playerAuth.createPlayer(playerName);
+      this.playerId = this.playerData.id;
+      this.playerName = this.playerData.name;
+
+      console.log('New player created:', this.playerName, this.playerId);
+
+      // Hide modal
+      modal.classList.remove('show');
+
+      // Show multiplayer UI and connect
+      this.showMultiplayerUI();
       setTimeout(() => {
         this.connect();
-      }, 1000);
+      }, 500);
+
+    } catch (error) {
+      console.error('Failed to create player:', error);
+      alert('Invalid name. Please use 2-20 characters (letters, numbers, spaces, hyphens, underscores only).');
     }
   }
 
@@ -41,6 +131,7 @@ export class MultiplayerClient {
     // Add multiplayer indicator to the UI
     const indicator = document.createElement('div');
     indicator.id = 'multiplayer-indicator';
+    const displayName = this.playerName || 'Player';
     indicator.innerHTML = `
       <div style="
         position: fixed;
@@ -56,26 +147,14 @@ export class MultiplayerClient {
         z-index: 1000;
         backdrop-filter: blur(5px);
       ">
-        🔗 MULTIPLAYER • Room: ${this.roomId}
+        🔗 ${displayName} • Room: ${this.roomId}
       </div>
     `;
 
     document.body.appendChild(indicator);
 
-    // Update taunt overlay with multiplayer info
-    const tauntOverlay = document.getElementById('taunt-overlay');
-    if (tauntOverlay) {
-      tauntOverlay.textContent = `Connecting to multiplayer room ${this.roomId}...`;
-      tauntOverlay.style.background = 'rgba(0, 255, 255, 0.2)';
-      tauntOverlay.style.borderColor = '#00ffff';
-      tauntOverlay.style.color = '#00ffff';
-    }
   }
 
-  generatePlayerId() {
-    // Generate a simple player ID
-    return 'player_' + Math.random().toString(36).substr(2, 8);
-  }
 
   connect() {
     if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
@@ -112,11 +191,13 @@ export class MultiplayerClient {
         // Join room as player
         this.sendMessage('join_as_player', {
           playerId: this.playerId,
+          playerName: this.playerName,
           roomId: this.roomId,
           metadata: {
             userAgent: navigator.userAgent,
             timestamp: Date.now(),
-            platform: 'mobile'
+            platform: 'mobile',
+            isReturningPlayer: this.playerData ? true : false
           }
         });
       };
@@ -170,40 +251,24 @@ export class MultiplayerClient {
         case 'joined_room':
           console.log('Successfully joined room:', data);
           this.callbacks.onRoomJoined(data);
-          this.updateConnectionStatus(`Connected • Player ${data.playerPosition}`);
+          this.updateConnectionStatus(`Connected • ${this.playerName}`);
 
-          const tauntOverlay = document.getElementById('taunt-overlay');
-          if (tauntOverlay) {
-            tauntOverlay.textContent = `Connected as Player ${data.playerPosition} in room ${data.roomId}`;
-          }
           break;
 
         case 'game_started':
           console.log('Multiplayer game started:', data);
           this.callbacks.onGameStart(data);
 
-          const tauntOverlay2 = document.getElementById('taunt-overlay');
-          if (tauntOverlay2) {
-            tauntOverlay2.textContent = 'Multiplayer game active!';
-          }
           break;
 
         case 'player_joined':
           console.log('Another player joined:', data);
           if (data.playerCount === 2) {
-            const tauntOverlay3 = document.getElementById('taunt-overlay');
-            if (tauntOverlay3) {
-              tauntOverlay3.textContent = 'Both players connected! Game starting...';
-            }
           }
           break;
 
         case 'player_left':
           console.log('A player left:', data);
-          const tauntOverlay4 = document.getElementById('taunt-overlay');
-          if (tauntOverlay4) {
-            tauntOverlay4.textContent = 'Waiting for other player to reconnect...';
-          }
           break;
 
         case 'error':
@@ -311,6 +376,14 @@ export class MultiplayerClient {
     return this.playerId;
   }
 
+  getPlayerName() {
+    return this.playerName;
+  }
+
+  getPlayerData() {
+    return this.playerData;
+  }
+
   getRoomId() {
     return this.roomId;
   }
@@ -320,7 +393,9 @@ export class MultiplayerClient {
       isConnected: this.isConnected,
       isMultiplayer: this.isMultiplayer,
       playerId: this.playerId,
-      roomId: this.roomId
+      playerName: this.playerName,
+      roomId: this.roomId,
+      isReturningPlayer: this.playerData ? true : false
     };
   }
 }

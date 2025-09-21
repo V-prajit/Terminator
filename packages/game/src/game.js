@@ -583,7 +583,8 @@ export class OverlordGame {
       onWin: options.onWin || (() => {}),
       onTaunt: options.onTaunt || (() => {}),
       onDebug: options.onDebug || (() => {}),
-      onUpdate: options.onUpdate || (() => {})
+      onUpdate: options.onUpdate || (() => {}),
+      getPlayerInfo: options.getPlayerInfo || (() => null)
     };
 
     // Initialization will be called manually from external script
@@ -753,23 +754,62 @@ export class OverlordGame {
   
   async requestTaunt() {
     try {
+      // Get player information if available
+      const playerInfo = this.callbacks.getPlayerInfo();
+
+      // Prepare taunt request with player context
+      const tauntRequest = {
+        // Game context
+        player_lane: this.state.playerLane,
+        recent_lanes: this.state.recentLanes,
+        overlord_mode: this.state.mode,
+        tick: this.state.tick,
+        survival_time: this.state.survivalTime,
+        game_phase: this.state.survivalTime < 5 ? 'beginner' :
+                   this.state.survivalTime < 20 ? 'intermediate' : 'expert',
+
+        // Player information (if available)
+        playerId: playerInfo?.playerId || null,
+        playerName: playerInfo?.playerName || null,
+
+        // Additional context for taunt generation
+        context: {
+          currentPerformance: {
+            survivalTime: this.state.survivalTime,
+            bestTime: this.state.bestTime
+          },
+          gameState: {
+            activeBullets: this.state.bullets.filter(b => b.type === 'enemy').length,
+            recentMoves: this.state.recentMoves?.slice(-5) || [],
+            lastAiDecision: this.lastDecision
+          }
+        }
+      };
+
       const response = await fetch(`${API_URL}/taunt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          player_lane: this.state.playerLane,
-          recent_lanes: this.state.recentLanes,
-          overlord_mode: this.state.mode,
-          tick: this.state.tick
-        })
+        body: JSON.stringify(tauntRequest)
       });
-      
-      const { message } = await response.json();
+
+      const result = await response.json();
+      const message = result.message || "Ready to try again?";
+
       this.callbacks.onTaunt(message);
       this.sfx.taunt();
       this.lastTauntTime = Date.now();
+
+      // Log taunt type for debugging
+      if (result.type === 'personalized') {
+        console.log(`[Game] 🤖 Personalized taunt for ${result.playerName}: "${message}"`);
+      } else {
+        console.log(`[Game] 💬 Fallback taunt (${result.type}): "${message}"`);
+      }
+
     } catch (err) {
       console.error('Taunt error:', err);
+      // Fallback taunt on error
+      this.callbacks.onTaunt("The AI is watching...");
     }
   }
   
@@ -908,7 +948,21 @@ export class OverlordGame {
         const dist = Math.hypot(bullet.x - playerX, bullet.y - playerY);
 
         if (dist < 25) {
-          this.onHit();
+          // Enhanced collision data
+          const collisionData = {
+            bulletType: bullet.type,
+            bulletSpeed: bullet.speed || 1.0,
+            collisionLane: this.state.playerLane,
+            bulletLane: bullet.lane || -1,
+            gamePhase: this.state.survivalTime < 5 ? 'beginner' :
+                      this.state.survivalTime < 20 ? 'intermediate' : 'expert',
+            bulletCount: this.state.bullets.filter(b => b.type === 'enemy').length,
+            playerPosition: { x: playerX, y: playerY },
+            bulletPosition: { x: bullet.x, y: bullet.y },
+            aiDecisionCaused: this.lastDecision
+          };
+
+          this.onHit(collisionData);
           this.effects.add({
             type: 'explosion',
             x: playerX,
@@ -1212,9 +1266,12 @@ export class OverlordGame {
     }
   }
   
-  onHit() {
+  onHit(collisionData = null) {
     if (this.state.dead) return;
-    
+
+    // Store collision data for death analysis
+    this.lastCollisionData = collisionData;
+
     this.sfx.hit();
     this.animator.setState('hit');
     this.onDeath();
@@ -1231,10 +1288,39 @@ export class OverlordGame {
     this.sfx.death();
     this.animator.setState('death');
 
-    this.callbacks.onDeath({
+    // Enhanced death data with collision details and game context
+    const deathData = {
+      // Basic stats (existing)
       time: this.state.survivalTime,
-      best: this.state.bestTime
-    });
+      best: this.state.bestTime,
+
+      // Collision details
+      deathCause: this.lastCollisionData ? 'bullet_collision' : 'unknown',
+      deathLane: this.lastCollisionData ? this.lastCollisionData.collisionLane : this.state.playerLane,
+      collisionData: this.lastCollisionData,
+
+      // Game state context
+      gamePhase: this.state.survivalTime < 5 ? 'beginner' :
+                this.state.survivalTime < 20 ? 'intermediate' : 'expert',
+      activeBullets: this.state.bullets.filter(b => b.type === 'enemy').length,
+
+      // Movement pattern (recent moves)
+      movementPattern: this.state.recentMoves ? this.state.recentMoves.slice() : [],
+      recentLanes: this.state.recentLanes ? this.state.recentLanes.slice() : [],
+
+      // AI context
+      lastAiDecision: this.lastDecision,
+      currentMode: this.state.mode,
+
+      // Session context
+      finalScore: this.state.survivalTime,
+      bulletCount: this.lastCollisionData ? this.lastCollisionData.bulletCount : 1,
+
+      // Timestamp
+      timestamp: Date.now()
+    };
+
+    this.callbacks.onDeath(deathData);
   }
 
   onWin() {

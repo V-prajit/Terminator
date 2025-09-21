@@ -164,6 +164,84 @@
         background: #22ff22;
         box-shadow: 0 0 25px rgba(0, 255, 0, 0.5);
       }
+      #name-entry-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.95);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1001;
+      }
+      #name-entry-modal.show {
+        display: flex;
+      }
+      .name-entry-title {
+        font-size: 24px;
+        color: #00ffff;
+        margin-bottom: 20px;
+        text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+      }
+      .name-entry-subtitle {
+        font-size: 14px;
+        color: #ccc;
+        margin-bottom: 30px;
+        text-align: center;
+        line-height: 1.4;
+      }
+      .name-input-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+      #player-name-input {
+        padding: 15px 20px;
+        font-size: 18px;
+        background: rgba(0, 255, 255, 0.1);
+        border: 2px solid #00ffff;
+        border-radius: 5px;
+        color: #fff;
+        font-family: inherit;
+        text-align: center;
+        width: 250px;
+        max-width: 80vw;
+      }
+      #player-name-input::placeholder {
+        color: #999;
+      }
+      #player-name-input:focus {
+        outline: none;
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+        background: rgba(0, 255, 255, 0.2);
+      }
+      .join-btn {
+        padding: 15px 30px;
+        font-size: 18px;
+        background: #00ffff;
+        color: #000;
+        border: none;
+        border-radius: 5px;
+        font-family: inherit;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+        transition: all 0.2s;
+      }
+      .join-btn:hover {
+        background: #22ffff;
+        box-shadow: 0 0 25px rgba(0, 255, 255, 0.5);
+      }
+      .join-btn:disabled {
+        background: #666;
+        color: #999;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
     </style>
   </head>
   <body>
@@ -178,7 +256,7 @@
       </div>
 
       <div id="controls-help">Swipe ← → to move • Tap to shoot</div>
-      <div id="taunt-overlay">Ready to play!</div>
+      <div id="taunt-overlay">AI Overlord is preparing...</div>
     </div>
 
     <div id="death-modal">
@@ -193,6 +271,24 @@
       <div>Survival Time: <span id="win-time">0.0</span>s</div>
       <div>Best Record: <span id="win-best">0.0</span>s</div>
       <button class="play-again-btn" id="play-again-button">PLAY AGAIN</button>
+    </div>
+
+    <div id="name-entry-modal">
+      <div class="name-entry-title">🔗 JOIN MULTIPLAYER ARENA</div>
+      <div class="name-entry-subtitle">
+        Enter your name to join the battle!<br>
+        Your gameplay history will be tracked for personalized AI taunts.
+      </div>
+      <div class="name-input-container">
+        <input
+          type="text"
+          id="player-name-input"
+          placeholder="Enter your name..."
+          maxlength="20"
+          autocomplete="off"
+        />
+        <button class="join-btn" id="join-arena-btn">JOIN ARENA</button>
+      </div>
     </div>
 
     <script type="module" src="/src/mobile.js"></script>
