@@ -460,7 +460,17 @@ async function initGame() {
             gameTime: data.time,
             score: data.best,
             ammo: data.ammo,
-            phase: game.state.phase || 'beginner'
+            phase: game.state.phase || 'beginner',
+            boss: game.boss ? {
+              active: game.boss.active,
+              defeated: game.boss.defeated,
+              health: game.boss.health,
+              maxHealth: game.boss.maxHealth,
+              x: game.boss.getX ? game.boss.getX() : game.width / 2,
+              y: game.boss.getY ? game.boss.getY() : 50,
+              damageFlash: game.boss.damageFlash || 0,
+              animatorState: game.boss.animator ? game.boss.animator.current : 'idle'
+            } : null
           };
 
           multiplayerClient.sendGameState(gameStateData);

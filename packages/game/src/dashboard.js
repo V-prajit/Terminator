@@ -437,6 +437,9 @@ class DashboardController {
           // Render lanes
           this.renderLanes();
 
+          // Render overlord/boss
+          this.renderOverlord(gameState);
+
           // Render player
           if (gameState.playerPosition) {
             this.renderPlayer(gameState.playerPosition);
@@ -470,14 +473,34 @@ class DashboardController {
         renderPlayer: function(playerPos) {
           const laneWidth = canvas.width / 5;
           const x = (playerPos.lane * laneWidth) + (laneWidth / 2);
-          const y = canvas.height - 60;
+          const y = canvas.height - 80; // Adjust positioning for new canvas size
 
-          this.ctx.fillStyle = '#00ffff';
-          this.ctx.fillRect(x - 15, y - 15, 30, 30);
+          // Draw player exactly like in mobile game - green circle with glow
+          this.ctx.save();
+          this.ctx.fillStyle = '#00ff00';
+          this.ctx.strokeStyle = '#00ff00';
+          this.ctx.lineWidth = 2;
+
+          // Add strong glow effect like mobile game
+          this.ctx.shadowBlur = 8;
+          this.ctx.shadowColor = '#00ff00';
+
+          // Draw filled circle
+          this.ctx.beginPath();
+          this.ctx.arc(x, y, 15, 0, Math.PI * 2);
+          this.ctx.fill();
+
+          // Draw stroke with glow
+          this.ctx.stroke();
+
+          // Add extra glow layer
+          this.ctx.shadowBlur = 12;
+          this.ctx.stroke();
+
+          this.ctx.restore();
         },
 
         renderBullets: function(bullets) {
-          this.ctx.fillStyle = '#ff0040';
           bullets.forEach(bullet => {
             if (bullet.x !== undefined && bullet.y !== undefined) {
               // Use the actual coordinates from the mobile game
@@ -488,9 +511,142 @@ class DashboardController {
               const x = bullet.x * scaleX;
               const y = bullet.y * scaleY;
 
-              this.ctx.fillRect(x - 3, y - 3, 6, 6);
+              this.ctx.save();
+              this.ctx.translate(x, y);
+
+              // Apply rotation if bullet has it
+              if (bullet.rotation !== undefined) {
+                this.ctx.rotate(bullet.rotation);
+              }
+
+              // Create gradient trail effect exactly like mobile game
+              const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 15);
+              gradient.addColorStop(0, 'rgba(255, 0, 64, 0.8)');
+              gradient.addColorStop(1, 'rgba(255, 0, 64, 0)');
+              this.ctx.fillStyle = gradient;
+              this.ctx.fillRect(-15, -15, 30, 30);
+
+              // Draw bright core bullet circle with glow
+              this.ctx.fillStyle = '#ff0040';
+              this.ctx.shadowColor = '#ff0040';
+              this.ctx.shadowBlur = 8;
+              this.ctx.beginPath();
+              this.ctx.arc(0, 0, 6, 0, Math.PI * 2);
+              this.ctx.fill();
+
+              // Add extra glow for enemy bullets
+              if (bullet.type === 'enemy') {
+                this.ctx.shadowBlur = 12;
+                this.ctx.fill();
+              }
+
+              this.ctx.restore();
             }
           });
+        },
+
+        renderOverlord: function(gameState) {
+          // Always render the overlord - either boss or basic overlord
+          const overlordX = canvas.width / 2;
+          const overlordY = 50;
+
+          // Check if boss is active
+          if (gameState.boss && (gameState.boss.active || gameState.boss.defeated)) {
+            // Render professional ULTRATHINK boss
+            const bossX = gameState.boss.x || overlordX;
+            const bossY = gameState.boss.y || overlordY;
+            this.renderProfessionalULTRATHINK(bossX, bossY, gameState.boss);
+
+            // Render health bar if boss is active
+            if (gameState.boss.active && gameState.boss.health !== undefined) {
+              this.renderBossHealthBar(bossX, bossY - 80, gameState.boss);
+            }
+          } else {
+            // Render small overlord (original design) - matches mobile game exactly
+            this.ctx.save();
+
+            // Draw triangle with proper fill and stroke like mobile game
+            this.ctx.fillStyle = '#ff00ff';
+            this.ctx.strokeStyle = '#ff00ff';
+            this.ctx.lineWidth = 2;
+
+            // Add glow effect first
+            this.ctx.shadowColor = '#ff00ff';
+            this.ctx.shadowBlur = 15;
+
+            // Draw triangle
+            this.ctx.beginPath();
+            this.ctx.moveTo(overlordX, overlordY - 25);
+            this.ctx.lineTo(overlordX - 25, overlordY + 25);
+            this.ctx.lineTo(overlordX + 25, overlordY + 25);
+            this.ctx.closePath();
+            this.ctx.stroke();
+
+            // Clear shadow for eyes
+            this.ctx.shadowBlur = 0;
+
+            // Draw overlord eyes
+            this.ctx.fillStyle = '#ff0000';
+            this.ctx.beginPath();
+            this.ctx.arc(overlordX - 8, overlordY - 5, 3, 0, 2 * Math.PI);
+            this.ctx.fill();
+
+            this.ctx.beginPath();
+            this.ctx.arc(overlordX + 8, overlordY - 5, 3, 0, 2 * Math.PI);
+            this.ctx.fill();
+
+            this.ctx.restore();
+          }
+        },
+
+        renderProfessionalULTRATHINK: function(x, y, boss) {
+          const time = Date.now() * 0.003;
+          const flashAlpha = boss.damageFlash > 0 ? 0.8 : 1.0;
+          const isAttacking = boss.animatorState === 'attack';
+          const isDamaged = boss.damageFlash > 0;
+
+          this.ctx.save();
+          this.ctx.globalAlpha = flashAlpha;
+
+          const size = 50;
+          const bodyColor = isDamaged ? '#ff4444' : (isAttacking ? '#ff00ff' : '#00ffff');
+
+          // Professional body
+          this.ctx.fillStyle = bodyColor;
+          this.ctx.fillRect(x - size/2, y - size/2, size, size);
+
+          // Professional details
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = '8px monospace';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText('AI', x, y);
+
+          this.ctx.restore();
+        },
+
+        renderBossHealthBar: function(x, y, boss) {
+          const healthPercent = boss.health / (boss.maxHealth || 100);
+          const barWidth = 160;
+          const barHeight = 6;
+
+          this.ctx.save();
+
+          // Health bar background
+          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+          this.ctx.fillRect(x - barWidth/2, y, barWidth, barHeight);
+
+          // Health bar fill
+          const healthColor = healthPercent > 0.6 ? '#00ff00' :
+                             healthPercent > 0.3 ? '#ffff00' : '#ff0000';
+          this.ctx.fillStyle = healthColor;
+          this.ctx.fillRect(x - barWidth/2, y, barWidth * healthPercent, barHeight);
+
+          // Health bar border
+          this.ctx.strokeStyle = '#ffffff';
+          this.ctx.lineWidth = 1;
+          this.ctx.strokeRect(x - barWidth/2, y, barWidth, barHeight);
+
+          this.ctx.restore();
         }
       };
 
@@ -519,12 +675,7 @@ class DashboardController {
   }
 
   updateQRCode() {
-    const qrCodeContainer = document.getElementById('qr-code');
-    if (!qrCodeContainer) return;
-
-    const { element } = this.qrGenerator.generateDashboardQR(this.roomId);
-    qrCodeContainer.innerHTML = '';
-    qrCodeContainer.appendChild(element);
+    // QR code functionality removed - no longer needed
   }
 
   updateRoomId(newRoomId) {
@@ -1036,7 +1187,7 @@ class DashboardController {
     const canvasContainer = container.querySelector('.game-canvas-container');
     if (canvasContainer) {
       canvasContainer.innerHTML = `
-        <canvas class="game-canvas" id="${playerId}-canvas" width="400" height="600"></canvas>
+        <canvas class="game-canvas" id="${playerId}-canvas" width="450" height="450"></canvas>
       `;
     }
   }
@@ -1076,26 +1227,43 @@ class DashboardController {
   }
 
   updateJoinInstructions() {
-    const joinInstructions = document.querySelector('.join-instructions');
-    if (!joinInstructions) return;
+    // Update input orchestration panel
+    const inputOrchText = document.getElementById('input-orch-text');
+    if (inputOrchText) {
+      const connectedCount = this.getConnectedPlayerCount();
+      if (connectedCount === 0) {
+        inputOrchText.textContent = 'Recent moves will appear here…';
+      } else if (connectedCount === 1) {
+        inputOrchText.textContent = 'Player 1 connected. Analyzing movement patterns…';
+      } else {
+        inputOrchText.textContent = 'Both players connected. Multi-agent coordination active.';
+      }
+    }
 
-    const connectedCount = this.getConnectedPlayerCount();
+    // Update strategy agent
+    const strategyText = document.getElementById('strategy-agent-text');
+    if (strategyText) {
+      const connectedCount = this.getConnectedPlayerCount();
+      if (connectedCount === 0) {
+        strategyText.textContent = 'Calculating optimal approach…';
+      } else if (connectedCount === 1) {
+        strategyText.textContent = 'Analyzing Player 1 behavior patterns. Preparing predictive models.';
+      } else {
+        strategyText.textContent = 'Dual-player strategy active. Cross-referencing movement patterns.';
+      }
+    }
 
-    if (connectedCount === 0) {
-      joinInstructions.innerHTML = `
-        <strong>Waiting for players...</strong><br>
-        Scan QR code with mobile device to join the game
-      `;
-    } else if (connectedCount === 1) {
-      joinInstructions.innerHTML = `
-        <strong>Player 1 Connected!</strong><br>
-        Waiting for Player 2 to scan QR code
-      `;
-    } else {
-      joinInstructions.innerHTML = `
-        <strong style="color: #00ff00;">Both Players Connected!</strong><br>
-        Watching live AI coordination between players
-      `;
+    // Update shooting agent
+    const shootingText = document.getElementById('shooting-agent-text');
+    if (shootingText) {
+      const connectedCount = this.getConnectedPlayerCount();
+      if (connectedCount === 0) {
+        shootingText.textContent = 'TARGET ACQUISITION IN PROGRESS…';
+      } else if (connectedCount === 1) {
+        shootingText.textContent = 'SINGLE TARGET LOCKED. PREPARING ENGAGEMENT PROTOCOLS.';
+      } else {
+        shootingText.textContent = 'DUAL TARGETS ACQUIRED. COORDINATED STRIKE PATTERNS ACTIVE.';
+      }
     }
   }
 }
