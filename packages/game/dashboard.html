@@ -18,52 +18,33 @@
         overflow: hidden;
         height: 100vh;
         position: relative;
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        box-sizing: border-box;
       }
 
-      /* Animated background particles */
+      /* Simplified background - no particles to prevent ghosting */
       .bg-particles {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        z-index: -1;
+        display: none;
       }
 
-      .particle {
-        position: absolute;
-        background: rgba(255, 0, 64, 0.1);
-        border-radius: 50%;
-        animation: float 6s ease-in-out infinite;
-      }
-
-      @keyframes float {
-        0%,
-        100% {
-          transform: translateY(0px) rotate(0deg);
-          opacity: 0.1;
-        }
-        50% {
-          transform: translateY(-20px) rotate(180deg);
-          opacity: 0.3;
-        }
-      }
-
-      /* Main dashboard grid */
+      /* Main dashboard grid - optimized for screen fit */
       .dashboard-container {
         display: grid;
-        grid-template-columns: 70% 30%;
-        grid-template-rows: auto 1fr 120px;
+        grid-template-columns: 65% 35%;
+        grid-template-rows: auto 1fr 100px;
         grid-template-areas:
           "header header"
           "games sidebar"
           "debate debate";
         height: 100vh;
-        gap: 10px;
-        padding: 10px;
-        transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        gap: 8px;
+        padding: 8px;
+        transition: all 0.3s ease;
         overflow: hidden;
+        max-width: 100vw;
+        box-sizing: border-box;
       }
 
       /* In dual-player mode, split players horizontally side by side */
@@ -72,16 +53,17 @@
         grid-template-rows: 1fr;
       }
 
-      /* Header */
+      /* Header - more compact */
       .dashboard-header {
         grid-area: header;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 15px 30px;
+        padding: 10px 20px;
         background: #f8f8f8;
         border: 1px solid #e0e0e0;
-        border-radius: 10px;
+        border-radius: 8px;
+        min-height: 50px;
       }
 
       .header-spacer {
@@ -113,11 +95,9 @@
         0%,
         100% {
           opacity: 1;
-          transform: scale(1);
         }
         50% {
-          opacity: 0.6;
-          transform: scale(1.2);
+          opacity: 0.7;
         }
       }
 
@@ -211,8 +191,10 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        height: 500px;
+        height: auto;
         flex: 1;
+        min-height: 600px;
+        max-height: 700px;
       }
 
       .game-canvas {
@@ -269,14 +251,16 @@
         }
       }
 
-      /* Sidebar */
+      /* Sidebar - more compact */
       .sidebar {
         grid-area: sidebar;
         width: 100%;
         display: flex;
         flex-direction: column;
-        gap: 20px;
-        transition: all 0.6s ease-out;
+        gap: 12px;
+        transition: all 0.3s ease;
+        max-height: calc(100vh - 180px);
+        overflow-y: auto;
       }
 
       .sidebar-panel {
@@ -334,8 +318,8 @@
       }
 
       .panel-content {
-        padding: 20px;
-        max-height: 320px;
+        padding: 15px;
+        max-height: 200px;
         overflow-y: auto;
         color: #222222;
       }
@@ -406,15 +390,15 @@
         margin-top: 3px;
       }
 
-      /* Agent debate area */
+      /* Agent debate area - more compact */
       .agent-debate {
         grid-area: debate;
         background: #ffffff;
         border: 1px solid #e0e0e0;
-        border-radius: 15px;
+        border-radius: 10px;
         overflow: hidden;
-        max-height: 120px;
-        transition: all 0.7s ease-in-out;
+        max-height: 100px;
+        transition: all 0.3s ease;
       }
 
       .dashboard-container.dual-player .agent-debate {
@@ -422,7 +406,7 @@
       }
 
       .debate-header {
-        padding: 15px 30px;
+        padding: 10px 20px;
         background: #f5f5f5;
         border-bottom: 1px solid #e0e0e0;
         display: flex;
@@ -445,10 +429,10 @@
       }
 
       .debate-content {
-        padding: 10px 20px;
-        height: 70px;
+        padding: 8px 15px;
+        height: 60px;
         overflow-y: auto;
-        transition: height 0.7s ease-in-out;
+        transition: height 0.3s ease;
       }
 
       .dashboard-container.dual-player .debate-content {
@@ -513,14 +497,37 @@
       }
 
       /* Responsive adjustments */
-      @media (max-width: 1200px) {
-        .sidebar {
-          width: 300px;
+      @media (max-width: 1400px) {
+        .dashboard-container {
+          grid-template-columns: 60% 40%;
+          gap: 6px;
+          padding: 6px;
         }
 
+        .panel-content {
+          padding: 12px;
+          max-height: 180px;
+        }
+
+        .game-canvas-container {
+          min-height: 500px;
+        }
+      }
+
+      @media (max-width: 1200px) {
         .dashboard-container {
-          gap: 15px;
-          padding: 15px;
+          grid-template-columns: 55% 45%;
+          gap: 5px;
+          padding: 5px;
+        }
+
+        .panel-content {
+          padding: 10px;
+          max-height: 160px;
+        }
+
+        .game-canvas-container {
+          min-height: 450px;
         }
       }
 
@@ -537,8 +544,9 @@
         animation: scaleIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
       }
 
+      /* Reduced animations to prevent ghosting */
       .glow-pulse {
-        animation: glowPulse 2s ease-in-out infinite;
+        box-shadow: 0 0 8px rgba(0, 255, 255, 0.4);
       }
 
       @keyframes fadeIn {
@@ -550,79 +558,54 @@
         }
       }
 
-      @keyframes slideInRight {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-
-      @keyframes scaleIn {
-        from {
-          transform: scale(0.8);
-          opacity: 0;
-        }
-        to {
-          transform: scale(1);
-          opacity: 1;
-        }
-      }
-
-      @keyframes glowPulse {
-        0%,
-        100% {
-          box-shadow: 0 0 5px rgba(0, 255, 255, 0.3);
-        }
-        50% {
-          box-shadow: 0 0 20px rgba(0, 255, 255, 0.6),
-            0 0 30px rgba(0, 255, 255, 0.4);
-        }
-      }
-
-      /* Demo presentation enhancements */
+      /* Demo presentation enhancements - simplified */
       .demo-mode .player-container {
         position: relative;
         overflow: hidden;
+        border: 2px solid #00ffff;
       }
 
-      .demo-mode .player-container::before {
-        content: "";
-        position: absolute;
-        top: -2px;
-        left: -2px;
-        right: -2px;
-        bottom: -2px;
-        background: linear-gradient(45deg, #ff0040, #00ffff, #ff0040);
-        border-radius: 17px;
-        z-index: -1;
-        animation: borderRotate 3s linear infinite;
+      /* Performance Metrics Styling - Text Based */
+      .metric-text {
+        margin-bottom: 20px;
+        padding: 10px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.03);
+        border-left: 3px solid #00ffff;
       }
 
-      @keyframes borderRotate {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
+      .metric-label {
+        font-size: 12px;
+        color: #666666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 5px;
       }
 
-      /* Performance Metrics Styling */
+      .metric-big-value {
+        font-size: 28px;
+        font-weight: bold;
+        color: #333333;
+        margin-bottom: 3px;
+      }
+
+      .metric-target {
+        font-size: 11px;
+        color: #999999;
+      }
+
+      /* Legacy gauge support for old code */
       .metric-gauge {
         display: flex;
         align-items: center;
-        margin-bottom: 15px;
-        gap: 15px;
+        margin-bottom: 12px;
+        gap: 12px;
       }
 
       .gauge-container {
         position: relative;
-        width: 60px;
-        height: 60px;
+        width: 50px;
+        height: 50px;
       }
 
       .gauge-background {
@@ -680,14 +663,14 @@
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        width: 40px;
-        height: 40px;
+        width: 32px;
+        height: 32px;
         background: #ffffff;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 10px;
+        font-size: 9px;
         font-weight: bold;
         color: #333333;
       }
@@ -782,17 +765,37 @@
         75% { transform: translateX(2px); }
       }
 
-      /* Performance mode */
+      /* Performance mode - all animations disabled */
       .performance-mode * {
         will-change: auto;
+        animation: none !important;
+        transition: none !important;
       }
 
-      .performance-mode .particle {
-        display: none;
-      }
-
-      .performance-mode .glow-pulse {
+      /* Enable performance mode by default */
+      body {
         animation: none;
+      }
+
+      * {
+        animation-duration: 0.2s;
+      }
+
+      /* Ensure content fits viewport */
+      html {
+        font-size: 14px;
+      }
+
+      @media (max-width: 1024px) {
+        html {
+          font-size: 13px;
+        }
+      }
+
+      @media (max-width: 768px) {
+        html {
+          font-size: 12px;
+        }
       }
 
       /* Success indicators */
@@ -828,8 +831,6 @@
     </style>
   </head>
   <body>
-    <!-- Background particles -->
-    <div class="bg-particles" id="particles"></div>
 
     <div class="dashboard-container" id="dashboard">
       <!-- Header -->
@@ -887,7 +888,14 @@
             </div>
           </div>
           <div class="game-canvas-container">
-            <canvas class="game-canvas" id="player2-canvas"></canvas>
+            <div class="waiting-indicator">
+              <div class="waiting-text">Waiting for player to join...</div>
+              <div class="loading-dots">
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -896,57 +904,41 @@
       <div class="sidebar">
         <!-- AI Performance Metrics -->
         <div class="sidebar-panel">
-          <div class="panel-header ai-performance">AI Performance Metrics</div>
+          <div class="panel-header ai-performance">🤖 Performance Metrics</div>
           <div class="panel-content">
-            <div class="metric-gauge">
-              <div class="gauge-container">
-                <div class="gauge-background"></div>
-                <div class="gauge-fill latency" id="latency-gauge"></div>
-                <div class="gauge-center" id="latency-value">0ms</div>
-              </div>
-              <div class="metric-info">
-                <div class="metric-label">Response Time</div>
-                <div class="metric-value">Target: <400ms</div>
-              </div>
+            <div class="metric-text">
+              <div class="metric-label">Response Time</div>
+              <div class="metric-big-value" id="latency-value">0ms</div>
+              <div class="metric-target">Target: <400ms</div>
             </div>
-            <div class="metric-gauge">
-              <div class="gauge-container">
-                <div class="gauge-background"></div>
-                <div class="gauge-fill accuracy" id="accuracy-gauge"></div>
-                <div class="gauge-center" id="accuracy-value">0%</div>
-              </div>
-              <div class="metric-info">
-                <div class="metric-label">Prediction Accuracy</div>
-                <div class="metric-value">Live tracking</div>
-              </div>
+            <div class="metric-text">
+              <div class="metric-label">Prediction Accuracy</div>
+              <div class="metric-big-value" id="accuracy-value">0%</div>
+              <div class="metric-target">Live tracking</div>
             </div>
           </div>
         </div>
 
         <!-- System Performance -->
         <div class="sidebar-panel">
-          <div class="panel-header system-metrics">System Performance</div>
+          <div class="panel-header system-metrics">⚡ System Performance</div>
           <div class="panel-content">
-            <div class="metric-gauge">
-              <div class="gauge-container">
-                <div class="gauge-background"></div>
-                <div class="gauge-fill fps" id="fps-gauge"></div>
-                <div class="gauge-center" id="fps-value">60</div>
-              </div>
-              <div class="metric-info">
-                <div class="metric-label">Frames Per Second</div>
-                <div class="metric-value">Target: 60 FPS</div>
-              </div>
+            <div class="metric-text">
+              <div class="metric-label">Frames Per Second</div>
+              <div class="metric-big-value" id="fps-value">60</div>
+              <div class="metric-target">Target: 60 FPS</div>
             </div>
-            <div style="margin-top: 10px;">
-              <div style="font-size: 12px; margin-bottom: 5px;">Tokens/Second: <strong id="tokens-per-second">0.00</strong></div>
+            <div class="metric-text">
+              <div class="metric-label">Tokens/Second</div>
+              <div class="metric-big-value" id="tokens-per-second">0.00</div>
+              <div class="metric-target">AI Processing</div>
             </div>
           </div>
         </div>
 
         <!-- Game Phase Progression -->
         <div class="sidebar-panel">
-          <div class="panel-header realtime-data">Game Phase Progression</div>
+          <div class="panel-header realtime-data">🎮 Game Phase Progression</div>
           <div class="panel-content">
             <div class="phase-indicator">
               <div class="phase-step completed" id="phase-beginner"></div>
@@ -967,7 +959,7 @@
 
         <!-- AI Personality & Decision Analysis -->
         <div class="sidebar-panel">
-          <div class="panel-header prediction-analysis">AI Personality & Decisions</div>
+          <div class="panel-header prediction-analysis">🧠 AI Personality & Decisions</div>
           <div class="panel-content">
             <div class="ai-emotion">
               <div class="emotion-indicator calculating" id="ai-emotion-indicator"></div>

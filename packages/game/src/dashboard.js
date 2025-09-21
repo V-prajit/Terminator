@@ -186,7 +186,8 @@ class DashboardController {
   }
 
   generateRoomId() {
-    return Math.random().toString(36).substr(2, 6).toUpperCase();
+    // Force ABC123 for demo consistency
+    return 'ABC123';
   }
 
   init() {
@@ -219,8 +220,12 @@ class DashboardController {
 
   setupBackgroundParticles() {
     const particlesContainer = document.getElementById('particles');
-    const particleCount = 20;
+    if (!particlesContainer) {
+      console.log('No particles container - skipping background particles');
+      return;
+    }
 
+    const particleCount = 20;
     for (let i = 0; i < particleCount; i++) {
       const particle = document.createElement('div');
       particle.className = 'particle';
@@ -240,19 +245,27 @@ class DashboardController {
 
   setupWebSocket() {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
 
-    console.log('Connecting to WebSocket:', wsUrl);
+    // Force correct WebSocket URL for ngrok
+    let wsUrl;
+    if (window.location.host.includes('ngrok')) {
+      wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+    } else {
+      wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+    }
+
+    console.log('Dashboard connecting to WebSocket:', wsUrl);
 
     try {
       this.websocket = new WebSocket(wsUrl);
 
       this.websocket.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('✅ Dashboard WebSocket connected to:', wsUrl);
         this.isConnected = true;
         this.updateConnectionStatus('Connected', true);
 
         // Join as dashboard with our generated room ID
+        console.log('📡 Dashboard joining room:', this.roomId);
         this.sendMessage('join_as_dashboard', { roomId: this.roomId });
       };
 
@@ -274,13 +287,19 @@ class DashboardController {
       };
 
       this.websocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('❌ Dashboard WebSocket error:', error);
+        console.error('❌ Failed URL was:', wsUrl);
         this.updateConnectionStatus('Error', false);
       };
 
     } catch (error) {
-      console.error('Failed to create WebSocket:', error);
-      this.simulateConnection(); // Fallback to simulation
+      console.error('❌ Failed to create Dashboard WebSocket:', error);
+      console.error('❌ Tried URL:', wsUrl);
+      // Retry in 2 seconds
+      setTimeout(() => {
+        console.log('🔄 Retrying dashboard WebSocket connection...');
+        this.setupWebSocket();
+      }, 2000);
     }
   }
 
@@ -431,8 +450,16 @@ class DashboardController {
   }
 
   sizeCanvasToContainer(canvas) {
+    if (!canvas) {
+      console.warn('[Dashboard] ❌ Canvas is null, cannot size');
+      return;
+    }
+
     const container = canvas.parentElement;
-    if (!container) return;
+    if (!container) {
+      console.warn('[Dashboard] ❌ Canvas parent is null, cannot size canvas');
+      return;
+    }
 
     const rect = container.getBoundingClientRect();
     const cssW = Math.max(1, Math.floor(rect.width));
@@ -616,7 +643,8 @@ class DashboardController {
             this.ctx.lineTo(overlordX - 25, overlordY + 25);
             this.ctx.lineTo(overlordX + 25, overlordY + 25);
             this.ctx.closePath();
-            this.ctx.stroke();
+            this.ctx.fill();  // Fill the triangle
+            this.ctx.stroke(); // Then stroke the outline
 
             // Clear shadow for eyes
             this.ctx.shadowBlur = 0;
@@ -1249,10 +1277,8 @@ class DashboardController {
   }
 
   updateLatencyGauge() {
-    const latencyGauge = document.getElementById('latency-gauge');
     const latencyValue = document.getElementById('latency-value');
-
-    if (!latencyGauge || !latencyValue) return;
+    if (!latencyValue) return;
 
     // Calculate average latency from recent measurements
     const recentLatencies = this.metricsTracker.latencies.slice(-10);
@@ -1260,50 +1286,53 @@ class DashboardController {
       ? recentLatencies.reduce((a, b) => a + b, 0) / recentLatencies.length
       : 0;
 
-    // Convert to gauge percentage (0-400ms range)
-    const percentage = Math.min(100, (avgLatency / 400) * 100);
-    const degrees = (percentage / 100) * 360;
-
-    latencyGauge.style.setProperty('--gauge-degrees', `${degrees}deg`);
     latencyValue.textContent = `${Math.round(avgLatency)}ms`;
 
-    // Color coding: green < 200ms, yellow < 350ms, red >= 350ms
+    // Color coding based on latency
     if (avgLatency < 200) {
-      latencyGauge.style.background = `conic-gradient(from 0deg, #00ff00 0deg, #00ff00 ${degrees}deg, #e0e0e0 ${degrees}deg, #e0e0e0 360deg)`;
+      latencyValue.style.color = '#00aa00';
     } else if (avgLatency < 350) {
-      latencyGauge.style.background = `conic-gradient(from 0deg, #ffff00 0deg, #ffff00 ${degrees}deg, #e0e0e0 ${degrees}deg, #e0e0e0 360deg)`;
+      latencyValue.style.color = '#ff8800';
     } else {
-      latencyGauge.style.background = `conic-gradient(from 0deg, #ff0000 0deg, #ff0000 ${degrees}deg, #e0e0e0 ${degrees}deg, #e0e0e0 360deg)`;
+      latencyValue.style.color = '#ff0000';
     }
   }
 
   updateAccuracyGauge() {
-    const accuracyGauge = document.getElementById('accuracy-gauge');
     const accuracyValue = document.getElementById('accuracy-value');
-
-    if (!accuracyGauge || !accuracyValue) return;
+    if (!accuracyValue) return;
 
     const accuracy = this.metricsTracker.predictions.total > 0
       ? (this.metricsTracker.predictions.correct / this.metricsTracker.predictions.total) * 100
       : 0;
 
-    const degrees = (accuracy / 100) * 360;
-    accuracyGauge.style.setProperty('--gauge-degrees', `${degrees}deg`);
     accuracyValue.textContent = `${Math.round(accuracy)}%`;
+
+    // Color coding based on accuracy
+    if (accuracy >= 75) {
+      accuracyValue.style.color = '#00aa00';
+    } else if (accuracy >= 50) {
+      accuracyValue.style.color = '#ff8800';
+    } else {
+      accuracyValue.style.color = '#ff0000';
+    }
   }
 
   updateFPSGauge() {
-    const fpsGauge = document.getElementById('fps-gauge');
     const fpsValue = document.getElementById('fps-value');
-
-    if (!fpsGauge || !fpsValue) return;
+    if (!fpsValue) return;
 
     const fps = this.performanceStats.fps;
-    const percentage = Math.min(100, (fps / 60) * 100);
-    const degrees = (percentage / 100) * 360;
-
-    fpsGauge.style.setProperty('--gauge-degrees', `${degrees}deg`);
     fpsValue.textContent = fps.toString();
+
+    // Color coding based on FPS
+    if (fps >= 55) {
+      fpsValue.style.color = '#00aa00';
+    } else if (fps >= 30) {
+      fpsValue.style.color = '#ff8800';
+    } else {
+      fpsValue.style.color = '#ff0000';
+    }
   }
 
   updatePhaseProgression() {
